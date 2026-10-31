@@ -18,8 +18,10 @@ import numpy as np
 TMP = tempfile.mkdtemp(prefix="pantallita-test-")
 os.environ["PANTALLITA_HOME"] = TMP  # must be set before importing pantallita.config
 
-from pantallita import ask, audio, capture, config, tokens  # noqa: E402
-from pantallita.timeline import Timeline  # noqa: E402
+from pantallita import config  # noqa: E402
+from pantallita.brain import ask, tokens  # noqa: E402
+from pantallita.memory import audio, capture  # noqa: E402
+from pantallita.memory.timeline import Timeline  # noqa: E402
 
 
 class FakeShot:

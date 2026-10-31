@@ -6,7 +6,7 @@ import time
 from collections import Counter
 
 from .config import Config
-from .timeline import Timeline
+from .memory.timeline import Timeline
 
 
 def _size(n: int) -> str:

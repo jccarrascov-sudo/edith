@@ -21,7 +21,7 @@ import threading
 import time
 from pathlib import Path
 
-from .config import Config
+from ..config import Config
 
 log = logging.getLogger(__name__)
 

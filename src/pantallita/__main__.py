@@ -9,12 +9,12 @@ import threading
 import time
 
 from .config import load_config
-from .timeline import Timeline
+from .memory.timeline import Timeline
 
 
 def run(cfg, duration: float | None = None) -> None:
-    from .audio import AudioRecorder
-    from .capture import PrivacyGate, ScreenCapture
+    from .memory.audio import AudioRecorder
+    from .memory.capture import PrivacyGate, ScreenCapture
 
     log = logging.getLogger("pantallita")
     timeline = Timeline(cfg)
@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "run":
         run(cfg, args.duration)
     elif args.command == "ask":
-        from .ask import ask
+        from .brain.ask import ask
         Timeline(cfg).prune()
         ask(cfg, args.question, dry_run=args.dry_run)
     elif args.command == "status":

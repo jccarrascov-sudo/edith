@@ -11,7 +11,7 @@ import mss
 import numpy as np
 from PIL import Image
 
-from .config import Config
+from ..config import Config
 from .timeline import Timeline
 from .winutil import foreground_window
 

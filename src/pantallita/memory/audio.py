@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 import pyaudiowpatch as pyaudio
 
+from ..config import Config
 from .capture import PrivacyGate
-from .config import Config
 from .timeline import Timeline
 
 log = logging.getLogger(__name__)

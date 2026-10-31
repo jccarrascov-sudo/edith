@@ -11,8 +11,8 @@ from datetime import datetime
 from PIL import Image
 
 from . import tokens
-from .config import Config, load_api_settings
-from .timeline import Timeline
+from ..config import Config, load_api_settings
+from ..memory.timeline import Timeline
 
 log = logging.getLogger(__name__)
 

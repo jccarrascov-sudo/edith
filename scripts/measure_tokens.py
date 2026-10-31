@@ -19,12 +19,13 @@ import urllib.request
 import mss
 from PIL import Image
 
-from pantallita import tokens, uia
-from pantallita.ask import ContextOptions, build_messages
-from pantallita.capture import primary_monitor
+from pantallita.brain import tokens
+from pantallita.memory import uia
+from pantallita.brain.ask import ContextOptions, build_messages
+from pantallita.memory.capture import primary_monitor
 from pantallita.config import load_api_settings, load_config
-from pantallita.timeline import Timeline
-from pantallita.winutil import foreground_window
+from pantallita.memory.timeline import Timeline
+from pantallita.memory.winutil import foreground_window
 
 API = load_api_settings()
 

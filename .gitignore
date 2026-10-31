@@ -1,0 +1,25 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Private capture data (screenshots, audio, timeline)
+buffer/
+*.jpg
+*.jpeg
+*.png
+*.wav
+*.jsonl
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db

@@ -1,0 +1,4 @@
+# Normalize line endings in the repo; hooks must stay LF so sh can run them on Windows.
+* text=auto
+hooks/* text eol=lf
+*.sh text eol=lf

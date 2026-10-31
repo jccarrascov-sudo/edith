@@ -1,0 +1,43 @@
+#!/bin/sh
+# Pantallita safety hook: never commit secrets or private capture data.
+# Installed with: .venv\Scripts\python scripts\install_hooks.py  (sets core.hooksPath=hooks)
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+status=0
+
+block() {
+    echo "pre-commit: BLOCKED $1" >&2
+    status=1
+}
+
+for f in $staged; do
+    base=$(basename "$f")
+    case "$base" in
+        .env.example) ;;
+        .env|.env.*) block "'$f' (secrets file)" ;;
+    esac
+    case "$f" in
+        buffer/*|*/buffer/*) block "'$f' (private capture data in buffer/)" ;;
+        *.wav|*.sqlite|*.sqlite3|*.db|*.jsonl) block "'$f' (private data file type)" ;;
+    esac
+done
+
+# Block any staged line containing a secret value from the local .env (values are never printed).
+if [ -f .env ]; then
+    values=$(sed -n 's/^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*//p' .env \
+        | tr -d '\r' | sed "s/^[\"']//; s/[\"']\$//" | awk 'length($0) >= 16')
+    if [ -n "$values" ]; then
+        added=$(git diff --cached -U0 --no-color | grep '^+' | grep -v '^+++')
+        echo "$values" | while IFS= read -r v; do
+            if printf '%s\n' "$added" | grep -qF -- "$v"; then
+                echo "pre-commit: BLOCKED a staged change contains a secret value from .env" >&2
+                exit 1
+            fi
+        done || status=1
+    fi
+fi
+
+if [ $status -ne 0 ]; then
+    echo "pre-commit: commit aborted. Unstage those files (git restore --staged <file>)." >&2
+fi
+exit $status

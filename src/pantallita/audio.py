@@ -14,6 +14,7 @@ from pathlib import Path
 import numpy as np
 import pyaudiowpatch as pyaudio
 
+from .capture import PrivacyGate
 from .config import Config
 from .timeline import Timeline
 
@@ -96,14 +97,15 @@ def rms(audio: np.ndarray) -> float:
 
 class AudioRecorder:
     def __init__(self, cfg: Config, timeline: Timeline, stop: threading.Event,
-                 transcriber: Transcriber | None = None):
+                 gate: PrivacyGate, transcriber: Transcriber | None = None):
         self.cfg = cfg
         self.a = cfg.audio
         self.timeline = timeline
         self.stop = stop
+        self.gate = gate
         self.transcriber = transcriber or Transcriber(cfg)
         self.chunks: queue.Queue[tuple[float, bytes, int]] = queue.Queue()
-        self.blocks = self.silent_blocks = self.segments = 0
+        self.blocks = self.silent_blocks = self.private_blocks = self.segments = 0
 
     # --- device handling -------------------------------------------------
     @staticmethod
@@ -207,6 +209,10 @@ class AudioRecorder:
 
     def _process(self, block_start: float, audio: np.ndarray) -> None:
         self.blocks += 1
+        if self.gate.blocked(block_start):
+            self.private_blocks += 1
+            log.debug("Dropped audio block: an excluded window was active")
+            return
         level = rms(audio)
         if level < self.a["silence_rms"]:
             self.silent_blocks += 1

@@ -18,7 +18,7 @@ import numpy as np
 TMP = tempfile.mkdtemp(prefix="pantallita-test-")
 os.environ["PANTALLITA_HOME"] = TMP  # must be set before importing pantallita.config
 
-from pantallita import ask, capture, config  # noqa: E402
+from pantallita import ask, audio, capture, config  # noqa: E402
 from pantallita.timeline import Timeline  # noqa: E402
 
 
@@ -122,6 +122,46 @@ class CaptureTests(unittest.TestCase):
         with mock.patch.object(capture, "foreground_window", lambda: next(calls)):
             self.cap.tick(self.screen, {})
         self.assertEqual(list(self.cfg.frames_dir.iterdir()), [])
+
+
+class FakeTranscriber:
+    def __init__(self):
+        self.calls = 0
+
+    def transcribe(self, samples):
+        self.calls += 1
+        return [(0.5, 2.0, "hello from the video")], "en"
+
+
+class AudioPrivacyTests(unittest.TestCase):
+    def setUp(self):
+        self.cfg = fresh_config()
+        self.timeline = Timeline(self.cfg)
+        self.gate = capture.PrivacyGate(margin_s=2.0)
+        self.whisper = FakeTranscriber()
+        self.rec = audio.AudioRecorder(self.cfg, self.timeline, threading.Event(), self.gate,
+                                       transcriber=self.whisper)
+        self.loud = (0.1 * np.sin(np.arange(16000 * 15) / 5)).astype(np.float32)
+
+    def test_loud_block_is_transcribed_and_saved(self):
+        self.rec._process(time.time() - 15, self.loud)
+        self.assertEqual(self.whisper.calls, 1)
+        self.assertEqual(len(list(self.cfg.audio_dir.iterdir())), 1)
+        self.assertEqual(self.timeline.read(since=0)[0]["text"], "hello from the video")
+
+    def test_silent_block_is_not_transcribed(self):
+        self.rec._process(time.time() - 15, np.zeros(16000 * 15, np.float32))
+        self.assertEqual(self.whisper.calls, 0)
+        self.assertEqual(list(self.cfg.audio_dir.iterdir()), [])
+
+    def test_block_overlapping_excluded_window_is_dropped(self):
+        start = time.time() - 15
+        self.gate.mark()  # an excluded window was in front during this block
+        self.rec._process(start, self.loud)
+        self.assertEqual(self.whisper.calls, 0)
+        self.assertEqual(list(self.cfg.audio_dir.iterdir()), [])
+        self.assertFalse(self.timeline.path.exists())
+        self.assertEqual(self.rec.private_blocks, 1)
 
 
 class RetentionTests(unittest.TestCase):

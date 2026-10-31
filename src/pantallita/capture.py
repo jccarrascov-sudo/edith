@@ -38,9 +38,26 @@ def primary_monitor(sct: mss.base.MSSBase) -> dict:
     return sct.monitors[1]
 
 
+class PrivacyGate:
+    """Remembers when an excluded window was last in front, so audio from that time is dropped too."""
+
+    def __init__(self, margin_s: float):
+        self.margin_s = margin_s
+        self.last_excluded = 0.0
+
+    def mark(self) -> None:
+        self.last_excluded = time.time()
+
+    def blocked(self, start: float) -> bool:
+        """True if an excluded window was active at any point since `start` (minus one capture tick)."""
+        return self.last_excluded >= start - self.margin_s
+
+
 class ScreenCapture:
-    def __init__(self, cfg: Config, timeline: Timeline, stop: threading.Event):
+    def __init__(self, cfg: Config, timeline: Timeline, stop: threading.Event,
+                 gate: PrivacyGate | None = None):
         self.cfg = cfg
+        self.gate = gate or PrivacyGate(cfg.capture["interval_s"])
         self.c = cfg.capture
         self.timeline = timeline
         self.stop = stop
@@ -67,6 +84,7 @@ class ScreenCapture:
         title, process = foreground_window()
         if self.cfg.is_excluded(title, process):
             self.excluded_ticks += 1
+            self.gate.mark()
             return
 
         shot = sct.grab(monitor)
@@ -74,6 +92,7 @@ class ScreenCapture:
         title_after, process_after = foreground_window()
         if self.cfg.is_excluded(title_after, process_after):
             self.excluded_ticks += 1
+            self.gate.mark()
             return
 
         now = time.time()

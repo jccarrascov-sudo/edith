@@ -14,17 +14,18 @@ from .timeline import Timeline
 
 def run(cfg, duration: float | None = None) -> None:
     from .audio import AudioRecorder
-    from .capture import ScreenCapture
+    from .capture import PrivacyGate, ScreenCapture
 
     log = logging.getLogger("pantallita")
     timeline = Timeline(cfg)
     timeline.prune()
     stop = threading.Event()
-    capture = ScreenCapture(cfg, timeline, stop)
+    gate = PrivacyGate(cfg.capture["interval_s"])
+    capture = ScreenCapture(cfg, timeline, stop, gate)
     workers = [threading.Thread(target=capture.run, name="capture", daemon=True)]
     recorder = None
     if cfg.audio["enabled"]:
-        recorder = AudioRecorder(cfg, timeline, stop)
+        recorder = AudioRecorder(cfg, timeline, stop, gate)
         workers.append(threading.Thread(target=recorder.run, name="audio", daemon=True))
 
     def janitor() -> None:
@@ -51,7 +52,8 @@ def run(cfg, duration: float | None = None) -> None:
         for w in workers:
             w.join(timeout=10)
         timeline.prune()
-        audio = (f", {recorder.blocks} audio blocks ({recorder.silent_blocks} silent), "
+        audio = (f", {recorder.blocks} audio blocks ({recorder.silent_blocks} silent, "
+                 f"{recorder.private_blocks} dropped for privacy), "
                  f"{recorder.segments} transcript segments") if recorder else ""
         log.info("Stopped: %d frames saved, %d excluded ticks%s",
                  capture.saved, capture.excluded_ticks, audio)

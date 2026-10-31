@@ -17,6 +17,7 @@ dependencies = [
     "nvidia-cudnn-cu12",
     "openai",
     "python-dotenv",
+    "uiautomation",
 ]
 
 [tool.setuptools.packages.find]

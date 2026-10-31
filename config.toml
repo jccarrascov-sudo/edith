@@ -1,0 +1,39 @@
+# pantallita configuration. All times are in seconds unless noted.
+
+[capture]
+interval_s = 2.0          # how often the primary monitor is grabbed
+change_threshold = 0.02   # mean abs diff (0-1) on a 64x36 grayscale thumbnail to save a frame
+max_idle_s = 30           # save a frame anyway if nothing was saved for this long
+jpeg_quality = 70
+max_width = 1280
+
+[audio]
+enabled = true
+block_s = 15              # length of each loopback block sent to whisper
+silence_rms = 0.003       # blocks quieter than this (~ -50 dBFS) are not transcribed
+model = "small"
+device = "cuda"           # falls back to cpu automatically
+compute_type = "int8"
+keep_wav = true           # keep non-silent blocks in buffer/audio (rotated like frames)
+
+[retention]
+minutes = 10              # nothing older than this is kept in buffer/
+prune_every_s = 5
+
+[ask]
+max_frames = 12
+recent_frames = 3         # always include the N most recent frames
+image_width = 1024        # frames are downscaled to this width before sending
+max_output_tokens = 1500
+
+# If the foreground window matches any of these (case-insensitive substring),
+# nothing is captured: no frame, no window title, no process name.
+[exclude]
+titles = [
+    "keepass", "1password", "bitwarden", "lastpass", "dashlane", "proton pass",
+    "banca", "bank", "bcp", "interbank", "bbva", "scotiabank", "banco",
+    "paypal", "incognito", "inprivate",
+]
+processes = [
+    "keepass.exe", "keepassxc.exe", "1password.exe", "bitwarden.exe",
+]

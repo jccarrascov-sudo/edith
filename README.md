@@ -55,6 +55,26 @@ copy .env.example .env   # then put your Meta Model API key in META_API_KEY
 .venv\Scripts\python scripts\measure_tokens.py           # token measurements (counts only)
 ```
 
+## Demo environment
+
+A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitious invoices
+are the controlled setting for the fabricate / verify / repair scenes.
+
+```powershell
+.venv\Scripts\python demo\demo_reset.py                 # empty portal DB, regenerate Excel, clear buffer/
+.venv\Scripts\python demo\portal\app.py --version v1    # http://127.0.0.1:8765
+.venv\Scripts\python demo\portal\app.py --version v2    # same portal, amount field moved and renamed
+```
+
+The Excel is written to `demo/data/invoices.xlsx`. All names and tax IDs are invented
+(tax IDs start with 99, a prefix no real RUC uses).
+
+## Safety hook
+
+`.venv\Scripts\python scripts\install_hooks.py` enables `hooks/pre-commit`, which blocks
+commits containing `.env` files, anything under `buffer/`, audio/database/timeline files,
+or any line that contains a secret value from the local `.env`.
+
 ## Related work
 
 **[AppAgentX](https://arxiv.org/abs/2503.02268)** (Westlake University, 2025;
@@ -92,6 +112,10 @@ libraries/models, installed from PyPI / Hugging Face and not vendored:
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | Loading `.env` | BSD-3-Clause |
 | [uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows) | Reading Windows UI Automation (element names, types, values) | Apache-2.0 |
 | [comtypes](https://github.com/enthought/comtypes) | COM bindings used by uiautomation | MIT |
+| [FastAPI](https://github.com/fastapi/fastapi) (+ [Starlette](https://github.com/encode/starlette)) | Demo "Invoice Portal" web app | MIT / BSD-3-Clause |
+| [Uvicorn](https://github.com/encode/uvicorn) | Serving the demo portal locally | BSD-3-Clause |
+| [python-multipart](https://github.com/Kludex/python-multipart) | Parsing the portal's form posts | Apache-2.0 |
+| [openpyxl](https://foss.heptapod.net/openpyxl/openpyxl) | Generating/reading the demo invoices Excel | MIT |
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
 
 No images, sounds or other assets are included.

@@ -1,4 +1,8 @@
-# pantallita
+# Pantallita
+
+**Your screen has an inventor.**
+
+Built for the Meta Global AI Developer Hackathon 2026 (Indie Developer track).
 
 An on-screen companion that remembers the last ~10 minutes of your screen and system audio,
 so you can ask it what just happened: *"what was the video about?"*, *"what was that error
@@ -6,9 +10,6 @@ in the terminal 5 minutes ago?"*. Later phases will let it act on the computer w
 visually showing what it is about to touch (with SAM 3).
 
 The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
-
-Built for the **Meta Global AI Developer Hackathon 2026**, Indie Developer track
-("Push the Frontier").
 
 ## How it works (Phase 1)
 
@@ -36,7 +37,7 @@ Built for the **Meta Global AI Developer Hackathon 2026**, Indie Developer track
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -e .
-copy .env.example .env   # then put your Meta Model API key in .env
+copy .env.example .env   # then put your Meta Model API key in META_API_KEY
 ```
 
 ## Usage
@@ -69,3 +70,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored:
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
 
 No images, sounds or other assets are included.
+
+## License
+
+[MIT](LICENSE)

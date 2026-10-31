@@ -102,12 +102,12 @@ def load_api_settings() -> ApiSettings:
     def first(*names: str, default: str = "") -> str:
         return next((os.environ[n] for n in names if os.environ.get(n)), default)
 
-    key = first("MODEL_API_KEY", "META_API_KEY", "OPENAI_API_KEY")
+    key = first("META_API_KEY", "MODEL_API_KEY", "OPENAI_API_KEY")
     if not key:
-        raise SystemExit(f"No API key found. Put MODEL_API_KEY in {ROOT / '.env'}")
+        raise SystemExit(f"No API key found. Put META_API_KEY in {ROOT / '.env'}")
     return ApiSettings(
         api_key=key,
-        base_url=first("MODEL_API_BASE_URL", "META_BASE_URL", "OPENAI_BASE_URL",
+        base_url=first("META_BASE_URL", "MODEL_API_BASE_URL", "OPENAI_BASE_URL",
                        default="https://api.meta.ai/v1"),
-        model=first("MODEL_NAME", "META_MODEL", default="muse-spark-1.3"),
+        model=first("META_MODEL", "MODEL_NAME", default="muse-spark-1.3"),
     )

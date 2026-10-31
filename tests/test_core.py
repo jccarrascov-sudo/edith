@@ -202,6 +202,15 @@ class SelectFramesTests(unittest.TestCase):
         self.assertLess(stamps[0], 570 / 9)  # the first time slice is represented
         self.assertEqual(len({f["path"] for f in picked}), 12)
 
+    def test_transcript_segments_are_merged(self):
+        segs = [{"start": t, "end": t + 3, "text": str(t)} for t in range(0, 60, 4)]
+        segs.append({"start": 100, "end": 102, "text": "later"})
+        merged = ask.merge_transcripts(segs)
+        self.assertEqual(len(merged), 4)
+        self.assertTrue(all(m["end"] - m["start"] <= 30 for m in merged))
+        self.assertEqual(merged[-1]["text"], "later")
+        self.assertEqual(" ".join(m["text"] for m in merged).split(), [s["text"] for s in segs])
+
     def test_few_frames_are_all_sent(self):
         frames = [{"path": str(i), "ts": float(i), "score": 0.1} for i in range(5)]
         self.assertEqual(ask.select_frames(frames, 12, 3), frames)

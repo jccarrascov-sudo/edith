@@ -74,6 +74,19 @@ def encode_frame(path, width: int) -> str:
     return base64.b64encode(out.getvalue()).decode("ascii")
 
 
+def merge_transcripts(segments: list[dict], max_gap_s: float = 2.0, max_len_s: float = 30.0) -> list[dict]:
+    """Join whisper's short segments into ~30 s lines: same content, fewer timestamp tokens."""
+    merged: list[dict] = []
+    for seg in segments:
+        last = merged[-1] if merged else None
+        if last and seg["start"] - last["end"] <= max_gap_s and seg["end"] - last["start"] <= max_len_s:
+            last["end"] = max(last["end"], seg["end"])
+            last["text"] += " " + seg["text"]
+        else:
+            merged.append({"start": seg["start"], "end": seg["end"], "text": seg["text"]})
+    return merged
+
+
 def window_history(events: list[dict], now: float, limit: int = 60) -> list[str]:
     lines, last = [], None
     for e in events:
@@ -97,7 +110,7 @@ def build_messages(cfg: Config, timeline: Timeline, question: str) -> tuple[list
     text += window_history(windows, now) or ["(none)"]
     text += ["", "System audio transcript (oldest first):"]
     text += [f'[{hhmmss(t["start"])}-{hhmmss(t["end"])}, {ago(t["start"], now)}] {t["text"]}'
-             for t in transcripts] or ["(no speech heard)"]
+             for t in merge_transcripts(transcripts)] or ["(no speech heard)"]
     text += ["", f"{len(picked)} screenshots follow, oldest first."]
 
     content: list[dict] = [{"type": "text", "text": "\n".join(text)}]

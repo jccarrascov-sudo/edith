@@ -31,6 +31,10 @@ The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
   skipped; whisper is loaded only when there is something to transcribe.
 - **Ask** sends the transcript, a compact window history and the most informative frames
   (highest change per time slice + the most recent ones), and prints the tokens spent.
+- **Token efficiency**: decreasing resolution for older frames, crops of known elements,
+  compressed UI Automation text when it is cheaper than pixels, and history sent as
+  differences. Measured with the official token counter: a real `ask` went from 11,281 to
+  7,042 input tokens. Details and numbers in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#token-efficiency).
 
 ## Setup (Windows 11, Python 3.12)
 
@@ -48,7 +52,26 @@ copy .env.example .env   # then put your Meta Model API key in META_API_KEY
 .venv\Scripts\python -m pantallita ask "..." --dry-run   # show the context, no API call
 .venv\Scripts\python -m pantallita status
 .venv\Scripts\python -m unittest discover -s tests       # tests
+.venv\Scripts\python scripts\measure_tokens.py           # token measurements (counts only)
 ```
+
+## Related work
+
+**[AppAgentX](https://arxiv.org/abs/2503.02268)** (Westlake University, 2025;
+[code](https://github.com/Westlake-AGI-Lab/AppAgentX)) is the closest idea we know of: a
+smartphone GUI agent that keeps a memory of its *own* task executions, spots repetitive action
+sequences and evolves them into high-level "shortcut" actions, so later runs need fewer
+reasoning steps. Pantallita is designed around different choices:
+
+| | AppAgentX | Pantallita |
+|---|---|---|
+| Learns from | the agent's own past executions | a **human demonstration**, even retroactively: you do the task once, then ask, without having pressed "record" |
+| What it produces | higher-level GUI actions, still executed on screen by the agent | **code** (a plan of Playwright blocks) that does the task directly, **without touching the screen** or the mouse |
+| How it knows it works | task success while running | it **replays your demonstration as a test** and compares the result field by field before running on the rest of the data |
+| When the app changes | evolves new shortcuts over time | **repairs itself**: only the broken block is regenerated, using one new demonstration |
+
+Token-efficiency techniques are inspired by GUIPruner, SimpAgent and A11y-Compressor; see
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#token-efficiency).
 
 ## Built during the hackathon
 
@@ -67,6 +90,8 @@ libraries/models, installed from PyPI / Hugging Face and not vendored:
 | NVIDIA cuBLAS / cuDNN wheels (`nvidia-cublas-cu12`, `nvidia-cudnn-cu12`) | GPU runtime for CTranslate2 | NVIDIA license |
 | [openai](https://github.com/openai/openai-python) Python SDK | Client for the OpenAI-compatible Meta Model API | Apache-2.0 |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | Loading `.env` | BSD-3-Clause |
+| [uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows) | Reading Windows UI Automation (element names, types, values) | Apache-2.0 |
+| [comtypes](https://github.com/enthought/comtypes) | COM bindings used by uiautomation | MIT |
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
 
 No images, sounds or other assets are included.

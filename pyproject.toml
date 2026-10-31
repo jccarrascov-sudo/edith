@@ -18,6 +18,10 @@ dependencies = [
     "openai",
     "python-dotenv",
     "uiautomation",
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "openpyxl",
 ]
 
 [tool.setuptools.packages.find]

@@ -35,3 +35,6 @@ dist/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Generated demo data (portal DB, invoices.xlsx)
+demo/data/

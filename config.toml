@@ -24,7 +24,8 @@ prune_every_s = 5
 max_frames = 12
 recent_frames = 3         # always include the N most recent frames
 image_width = 1024        # frames are downscaled to this width before sending
-max_output_tokens = 1500
+max_output_tokens = 4000   # includes reasoning tokens
+reasoning_effort = "low"   # minimal | low | medium | high | xhigh | max
 
 # If the foreground window matches any of these (case-insensitive substring),
 # nothing is captured: no frame, no window title, no process name.

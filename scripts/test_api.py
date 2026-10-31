@@ -22,7 +22,7 @@ def main() -> None:
     print(f"base_url={api.base_url} model={api.model}")
 
     r = client.chat.completions.create(
-        model=api.model, max_tokens=50,
+        model=api.model, max_tokens=1000, reasoning_effort="low",
         messages=[{"role": "user", "content": "Reply with exactly: pong"}])
     print("text :", r.choices[0].message.content, "| usage:", r.usage)
 
@@ -34,7 +34,7 @@ def main() -> None:
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
 
     r = client.chat.completions.create(
-        model=api.model, max_tokens=50,
+        model=api.model, max_tokens=1000, reasoning_effort="low",
         messages=[{"role": "user", "content": [
             {"type": "text", "text": "Which digits are written in this image, and what is the background color? One short line."},
             {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},

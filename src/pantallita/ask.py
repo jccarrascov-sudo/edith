@@ -151,7 +151,8 @@ def ask(cfg: Config, question: str, dry_run: bool = False) -> str:
     client = OpenAI(api_key=api.api_key, base_url=api.base_url)
     t0 = time.monotonic()
     response = client.chat.completions.create(
-        model=api.model, messages=messages, max_tokens=cfg.ask["max_output_tokens"])
+        model=api.model, messages=messages, max_tokens=cfg.ask["max_output_tokens"],
+        reasoning_effort=cfg.ask["reasoning_effort"])
     answer = response.choices[0].message.content or ""
     print(answer)
 

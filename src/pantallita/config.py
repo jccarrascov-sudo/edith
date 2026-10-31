@@ -34,7 +34,8 @@ DEFAULTS: dict[str, dict] = {
         "max_frames": 12,
         "recent_frames": 3,
         "image_width": 1024,
-        "max_output_tokens": 1500,
+        "max_output_tokens": 4000,
+        "reasoning_effort": "low",
     },
     "exclude": {"titles": [], "processes": []},
 }

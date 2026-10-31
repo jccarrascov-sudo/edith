@@ -18,7 +18,7 @@ import numpy as np
 TMP = tempfile.mkdtemp(prefix="pantallita-test-")
 os.environ["PANTALLITA_HOME"] = TMP  # must be set before importing pantallita.config
 
-from pantallita import ask, audio, capture, config  # noqa: E402
+from pantallita import ask, audio, capture, config, tokens  # noqa: E402
 from pantallita.timeline import Timeline  # noqa: E402
 
 
@@ -188,6 +188,43 @@ class RetentionTests(unittest.TestCase):
         self.assertEqual([e.get("text", e.get("path")) for e in kept], ["b", "frames/new.jpg"])
         self.assertEqual(sorted(f.name for f in cfg.frames_dir.iterdir()), ["new.jpg"])
         self.assertEqual(list(cfg.audio_dir.iterdir()), [])
+
+
+class TokenHelperTests(unittest.TestCase):
+    def test_history_scales_newest_first_then_decay(self):
+        self.assertEqual(tokens.history_scales(5, [1.0, 0.5, 0.25]), [0.25, 0.25, 0.25, 0.5, 1.0])
+        self.assertEqual(tokens.history_scales(1, [1.0, 0.5]), [1.0])
+
+    def test_scale_is_uniform(self):
+        from PIL import Image
+        img = Image.new("RGB", (1280, 720))
+        self.assertEqual(tokens.scale_image(img, 0.5).size, (640, 360))
+        self.assertEqual(tokens.scale_image(img, 1.0).size, (1280, 720))
+
+    def test_crop_keeps_margin_and_stays_inside(self):
+        from PIL import Image
+        img = Image.new("RGB", (1280, 720))
+        crop, box = tokens.crop_with_margin(img, (1200, 10, 1270, 40), margin=48)
+        self.assertEqual(box[2], 1280)
+        self.assertEqual(box[1], 0)
+        self.assertGreaterEqual(crop.width, 160)
+
+    def test_changed_box_finds_only_the_changed_area(self):
+        from PIL import Image, ImageDraw
+        a = Image.new("RGB", (1280, 720), "white")
+        b = a.copy()
+        ImageDraw.Draw(b).rectangle((600, 300, 700, 360), fill="black")
+        box = tokens.changed_box(a, b)
+        self.assertTrue(box[0] <= 600 and box[1] <= 300 and box[2] >= 700 and box[3] >= 360)
+        self.assertLess(tokens.box_area_ratio(box, b.size), 0.05)
+        self.assertIsNone(tokens.changed_box(a, a.copy()))
+
+    def test_prefer_text_only_when_cheaper(self):
+        small_form = "\n".join(f'[{i}] edit "Field {i}" = "" @10,{i * 30},200,24' for i in range(6))
+        big_tree = "\n".join(f'[{i}] button "Tab number {i} with a long title" @{i},0,100,30' for i in range(400))
+        self.assertTrue(tokens.prefer_text(small_form, (1280, 720)))
+        self.assertFalse(tokens.prefer_text(big_tree, (1280, 720)))
+        self.assertFalse(tokens.prefer_text(small_form, (1280, 720), needs_pixels=True))
 
 
 class SelectFramesTests(unittest.TestCase):

@@ -68,7 +68,7 @@ class ScreenCapture:
         self.excluded_ticks = 0
 
     def run(self) -> None:
-        with mss.mss() as sct:
+        with mss.MSS() as sct:
             monitor = primary_monitor(sct)
             log.info("Capturing primary monitor %sx%s every %ss",
                      monitor["width"], monitor["height"], self.c["interval_s"])

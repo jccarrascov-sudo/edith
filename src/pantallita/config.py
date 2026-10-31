@@ -33,7 +33,10 @@ DEFAULTS: dict[str, dict] = {
     "ask": {
         "max_frames": 12,
         "recent_frames": 3,
-        "image_width": 1024,
+        "image_width": 1280,
+        "history_scales": [1.0, 0.75, 0.5],
+        "diff_crops": True,
+        "diff_crop_max_area": 0.6,
         "max_output_tokens": 4000,
         "reasoning_effort": "low",
     },

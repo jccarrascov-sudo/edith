@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import base64
-import io
 import logging
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 
 from PIL import Image
 
+from . import tokens
 from .config import Config, load_api_settings
 from .timeline import Timeline
 
@@ -65,13 +65,47 @@ def select_frames(frames: list[dict], max_n: int, recent_n: int) -> list[dict]:
     return sorted([*chosen.values(), *recent], key=lambda f: f["ts"])
 
 
-def encode_frame(path, width: int) -> str:
-    with Image.open(path) as img:
-        if img.width > width:
-            img = img.resize((width, round(img.height * width / img.width)), Image.LANCZOS)
-        out = io.BytesIO()
-        img.convert("RGB").save(out, "JPEG", quality=75)
-    return base64.b64encode(out.getvalue()).decode("ascii")
+@dataclass
+class ContextOptions:
+    """Which token optimizations to apply (all on by default; flags exist to measure each one)."""
+    history_scales: list[float] | None = None  # None = every frame at image_width
+    diff_crops: bool = True                    # older frames: only the region that changed
+    compact_text: bool = True                  # merged transcript + window changes only
+
+    @classmethod
+    def from_config(cls, cfg: Config) -> "ContextOptions":
+        return cls(history_scales=list(cfg.ask["history_scales"]), diff_crops=cfg.ask["diff_crops"])
+
+
+def frame_parts(cfg: Config, timeline: Timeline, picked: list[dict], now: float,
+                opts: ContextOptions) -> tuple[list[dict], int]:
+    """Content parts for the picked frames (oldest first) and the total base64 size."""
+    images = []
+    for f in picked:
+        with Image.open(timeline.buffer_path(f["path"])) as img:
+            images.append(tokens.fit_width(img.convert("RGB"), cfg.ask["image_width"]))
+    scales = (tokens.history_scales(len(images), opts.history_scales)
+              if opts.history_scales else [1.0] * len(images))
+    parts, size = [], 0
+    for i, (f, img) in enumerate(zip(picked, images)):
+        label = (f'Screenshot at {hhmmss(f["ts"])} ({ago(f["ts"], now)}), '
+                 f'{f["process"] or "?"}: "{f["window"]}"')
+        newest = i == len(images) - 1
+        if opts.diff_crops and 0 < i and not newest:
+            box = tokens.changed_box(images[i - 1], img)
+            if box is None:
+                parts.append({"type": "text", "text": label + ": no visible change since the previous screenshot."})
+                continue
+            if tokens.box_area_ratio(box, img.size) < cfg.ask["diff_crop_max_area"]:
+                img, crop = tokens.crop_with_margin(img, box, margin=24)
+                label += f", only the region that changed since the previous screenshot (box {crop})"
+        if newest:
+            label += " [current screen, full resolution]"
+        b64 = tokens.jpeg_b64(tokens.scale_image(img, scales[i]))
+        size += len(b64)
+        parts.append({"type": "text", "text": label})
+        parts.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+    return parts, size
 
 
 def merge_transcripts(segments: list[dict], max_gap_s: float = 2.0, max_len_s: float = 30.0) -> list[dict]:
@@ -98,7 +132,9 @@ def window_history(events: list[dict], now: float, limit: int = 60) -> list[str]
     return lines[-limit:]
 
 
-def build_messages(cfg: Config, timeline: Timeline, question: str) -> tuple[list[dict], dict]:
+def build_messages(cfg: Config, timeline: Timeline, question: str,
+                   opts: ContextOptions | None = None) -> tuple[list[dict], dict]:
+    opts = opts or ContextOptions.from_config(cfg)
     now = time.time()
     events = timeline.read()
     windows = [e for e in events if e["type"] == "window"]
@@ -107,28 +143,26 @@ def build_messages(cfg: Config, timeline: Timeline, question: str) -> tuple[list
     picked = select_frames(frames, cfg.ask["max_frames"], cfg.ask["recent_frames"])
 
     text = [f"Current local time: {hhmmss(now)}.", "", "Window history (oldest first):"]
-    text += window_history(windows, now) or ["(none)"]
+    if opts.compact_text:
+        text += window_history(windows, now) or ["(none)"]
+    else:
+        text += [f'- {hhmmss(e["ts"])} ({ago(e["ts"], now)}) {e["process"] or "?"}: "{e["window"]}"'
+                 for e in windows] or ["(none)"]
     text += ["", "System audio transcript (oldest first):"]
     text += [f'[{hhmmss(t["start"])}-{hhmmss(t["end"])}, {ago(t["start"], now)}] {t["text"]}'
-             for t in merge_transcripts(transcripts)] or ["(no speech heard)"]
+             for t in (merge_transcripts(transcripts) if opts.compact_text else transcripts)]         or ["(no speech heard)"]
     text += ["", f"{len(picked)} screenshots follow, oldest first."]
 
     content: list[dict] = [{"type": "text", "text": "\n".join(text)}]
-    image_bytes = 0
-    for f in picked:
-        content.append({"type": "text", "text": (
-            f'Screenshot at {hhmmss(f["ts"])} ({ago(f["ts"], now)}), '
-            f'{f["process"] or "?"}: "{f["window"]}"')})
-        b64 = encode_frame(timeline.buffer_path(f["path"]), cfg.ask["image_width"])
-        image_bytes += len(b64)
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+    parts, image_bytes = frame_parts(cfg, timeline, picked, now, opts)
+    content += parts
     content.append({"type": "text", "text": f"Question: {question}"})
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT.format(minutes=cfg.retention["minutes"])},
         {"role": "user", "content": content},
     ]
-    stats = {"images": len(picked), "frames_available": len(frames),
+    stats = {"images": sum(p["type"] == "image_url" for p in content), "frames_available": len(frames),
              "transcript_segments": len(transcripts), "window_changes": len(windows),
              "image_kb": image_bytes // 1024, "context_text": "\n".join(text)}
     return messages, stats

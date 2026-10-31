@@ -23,7 +23,10 @@ prune_every_s = 5
 [ask]
 max_frames = 12
 recent_frames = 3         # always include the N most recent frames
-image_width = 1024        # frames are downscaled to this width before sending
+image_width = 1280        # width of the current (newest) frame; older ones decay from here
+history_scales = [1.0, 0.75, 0.5]   # newest, previous, all older frames (see docs/ARCHITECTURE.md)
+diff_crops = true         # older frames: send only the region that changed
+diff_crop_max_area = 0.6  # if more than this fraction changed, send the whole frame
 max_output_tokens = 4000   # includes reasoning tokens
 reasoning_effort = "low"   # minimal | low | medium | high | xhigh | max
 

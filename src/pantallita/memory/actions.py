@@ -26,7 +26,7 @@ from typing import Callable
 from ..config import Config
 from .capture import PrivacyGate
 from .timeline import Timeline
-from .winutil import foreground_hwnd, foreground_window
+from .winutil import foreground_hwnd, foreground_window, window_at
 
 log = logging.getLogger(__name__)
 
@@ -58,13 +58,13 @@ _kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 _url_cache: dict[tuple[int, str], str | None] = {}
 
 
-def browser_url(process: str, title: str) -> str | None:
-    """Address-bar URL of the foreground browser window, cached per (window, title)."""
+def browser_url(process: str, title: str, hwnd: int | None = None) -> str | None:
+    """Address-bar URL of a browser window (default: the foreground one), cached per (window, title)."""
     from . import uia
 
     if process.lower() not in uia.BROWSERS:
         return None
-    key = (foreground_hwnd(), title)
+    key = (hwnd or foreground_hwnd(), title)
     if key not in _url_cache:
         if len(_url_cache) > 200:
             _url_cache.clear()
@@ -151,8 +151,9 @@ class ClickWatcher:
                     log.exception("Could not record a click")
 
     def record(self, ts: float, x: int, y: int, button: str, element_at) -> None:
-        title, process = foreground_window()
-        if self.cfg.is_excluded(title, process):
+        # The window under the click, not the foreground one: focus may have moved already.
+        hwnd, title, process = window_at(x, y)
+        if self.cfg.is_excluded(title, process) or self.cfg.is_excluded(*foreground_window()):
             self.private_clicks += 1
             if self.gate:
                 self.gate.mark()
@@ -164,7 +165,7 @@ class ClickWatcher:
                  "window": title, "process": process}
         if el is not None:
             event["element"] = element_info(el)
-        url = browser_url(process, title)
+        url = browser_url(process, title, hwnd)
         if url:
             event["url"] = url
         self.timeline.append(event)

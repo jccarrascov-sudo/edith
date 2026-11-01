@@ -53,3 +53,27 @@ def process_name(pid: int) -> str:
 
 def foreground_hwnd() -> int:
     return _user32.GetForegroundWindow() or 0
+
+
+_user32.WindowFromPoint.argtypes = [wintypes.POINT]
+_user32.WindowFromPoint.restype = wintypes.HWND
+_user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+_user32.GetAncestor.restype = wintypes.HWND
+_GA_ROOT = 2
+
+
+def window_at(x: int, y: int) -> tuple[int, str, str]:
+    """(top-level hwnd, title, process) of the window under a screen point.
+
+    Used for clicks: by the time a click is resolved, the foreground may already have changed.
+    """
+    hwnd = _user32.WindowFromPoint(wintypes.POINT(x, y))
+    root = _user32.GetAncestor(hwnd, _GA_ROOT) if hwnd else None
+    if not root:
+        return 0, "", ""
+    length = _user32.GetWindowTextLengthW(root)
+    buf = ctypes.create_unicode_buffer(length + 1)
+    _user32.GetWindowTextW(root, buf, length + 1)
+    pid = wintypes.DWORD()
+    _user32.GetWindowThreadProcessId(root, ctypes.byref(pid))
+    return root, buf.value, process_name(pid.value)

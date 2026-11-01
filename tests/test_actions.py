@@ -30,7 +30,8 @@ class Base(unittest.TestCase):
         self.timeline = Timeline(self.cfg)
         self.window = ("Invoice Portal - Edge", "msedge.exe")
         for p in (mock.patch.object(actions, "foreground_window", lambda: self.window),
-                  mock.patch.object(actions, "browser_url", lambda process, title: None)):
+                  mock.patch.object(actions, "window_at", lambda x, y: (1, *self.window)),
+                  mock.patch.object(actions, "browser_url", lambda *a: None)):
             p.start()
             self.addCleanup(p.stop)
 

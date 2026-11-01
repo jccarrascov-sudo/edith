@@ -23,6 +23,7 @@ dependencies = [
     "python-multipart",
     "openpyxl",
     "meta-sam-parser",
+    "playwright",
 ]
 
 [tool.setuptools.packages.find]

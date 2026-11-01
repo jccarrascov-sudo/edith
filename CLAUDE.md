@@ -112,7 +112,7 @@ every row and emits events (row in, block done, row out, error in block X) for t
 ## Code layout
 ```
 src/pantallita/
-  memory/   capture.py audio.py timeline.py winutil.py uia.py   (Phase 1, working)
+  memory/   capture.py actions.py audio.py timeline.py winutil.py uia.py   (Phase 1, done)
   brain/    ask.py tokens.py client.py (costs + brake)            (ask working)
   workshop/ ui/ vision/ detect/                                   (later phases)
 demo/       portal/app.py make_invoices.py demo_reset.py

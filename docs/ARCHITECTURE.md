@@ -3,14 +3,24 @@
 ## Memory (Phase 1)
 
 ```
-screen (mss, every 2 s) ──► change detection (64x36 grayscale diff) ──► buffer/frames/*.jpg ┐
+screen (mss, every 2 s; 0.5 s after a click) ──► change detection ──► buffer/frames/*.jpg ─┐
 foreground window (ctypes) ─────────────────────────────────────────────────────────────────┤
+mouse clicks (low-level MOUSE hook) ──► UIA element under the click ────────────────────────┤
+focused text field (UIA ValuePattern, never passwords) ──► value once it settles ───────────┤
 speakers (WASAPI loopback, 15 s blocks) ──► silence gate ──► faster-whisper (CUDA int8) ────┤
                                                                                             ▼
                                              buffer/timeline.jsonl (rolling 10-minute window)
 ```
 
 - `capture.py`: saves a frame only if the screen changed (> 2 % mean difference) or every 30 s.
+- `actions.py`: `ClickWatcher` installs a low-level *mouse* hook (`WH_MOUSE_LL`) that only
+  queues button presses; a second thread resolves the UIA element under each click (the hook
+  callback must return fast) and triggers a 3 s capture burst. Clicks injected by software
+  (`LLMHF_INJECTED`, e.g. Pantallita's own fallback mode) are counted and ignored.
+  `FieldWatcher` polls the focused element every 0.5 s and logs an edit/combo value once it
+  has been stable for 1.5 s or focus leaves the field, keyed by (process, type, name,
+  AutomationId) so page-title changes do not duplicate it. Browsers build their UIA tree
+  lazily, so a field's first settled value is logged even if it was already filled in.
 - `audio.py`: system output only (never the microphone); silent blocks are not transcribed.
 - `timeline.py`: append-only JSONL shared between processes through a lock file; pruned every 5 s.
 - `uia.py`: UI Automation reader (visible elements, values via ValuePattern). Password fields

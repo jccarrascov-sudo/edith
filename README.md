@@ -11,19 +11,27 @@ visually showing what it is about to touch (with SAM 3).
 
 The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
 
-## How it works (Phase 1)
+## How it works: memory (Phase 1)
 
 ```
- screen (mss, every 2 s) ──► change detection (64x36 grayscale diff) ──► buffer/frames/*.jpg ┐
+ screen (mss, every 2 s; 0.5 s after a click) ──► change detection ──► buffer/frames/*.jpg ─┐
  foreground window (ctypes) ─────────────────────────────────────────────────────────────────┤
+ mouse clicks (low-level MOUSE hook) ──► UIA element under the click ────────────────────────┤
+ focused text field (UIA ValuePattern, never passwords) ──► value once it settles ───────────┤
  speakers (WASAPI loopback, 15 s blocks) ──► silence gate ──► faster-whisper (CUDA int8) ────┤
                                                                                              ▼
                                               buffer/timeline.jsonl (rolling 10-minute window)
                                                                                              │
- pantallita ask "..." ◄── Muse Spark ◄── transcript + window history + 8-12 key frames ◄──────┘
+ pantallita ask "..." ◄── Muse Spark ◄── transcript + windows + actions + 8-12 key frames ◄─┘
 ```
 
 - **Capture** saves a frame only when the screen changed (>2% mean difference) or every 30 s.
+  After a click it looks every 0.5 s for 3 s, so the result of each action is caught.
+- **Actions**: each click is logged with its position and the UI Automation element under
+  it (type, name, rectangle); each text field's value is logged once it settles or focus
+  leaves it, read via ValuePattern like a screen reader does. **The keyboard is never
+  recorded** (there is no keyboard hook at all) and password fields are never read.
+  These are what "do the rest" learns from.
 - **Privacy**: windows matching the exclusion list in `config.toml` (password managers,
   banks, private browsing...) are never captured, not even their title. Everything lives
   in `buffer/`, which is git-ignored and pruned continuously to the last 10 minutes.
@@ -116,6 +124,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored:
 | [Uvicorn](https://github.com/encode/uvicorn) | Serving the demo portal locally | BSD-3-Clause |
 | [python-multipart](https://github.com/Kludex/python-multipart) | Parsing the portal's form posts | Apache-2.0 |
 | [openpyxl](https://foss.heptapod.net/openpyxl/openpyxl) | Generating/reading the demo invoices Excel | MIT |
+| [Playwright](https://github.com/microsoft/playwright-python) (+ Chromium) | Driving the browser in fabricated tools | Apache-2.0 |
 | [meta-sam-parser](https://dev.meta.ai/) (Meta) | Building SAM 3.1 box/point prompts and decoding its masks | SAM License |
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
 

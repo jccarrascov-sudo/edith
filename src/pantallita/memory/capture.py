@@ -66,19 +66,31 @@ class ScreenCapture:
         self.last_window: tuple[str, str] | None = None
         self.saved = 0
         self.excluded_ticks = 0
+        self.burst_until = 0.0
+        self._wake = threading.Event()
+
+    def burst(self, ts: float) -> None:
+        """A click happened: capture right away, then every burst_interval_s for burst_s."""
+        self.burst_until = max(self.burst_until, ts + self.c["burst_s"])
+        self._wake.set()
+
+    def interval(self) -> float:
+        return self.c["burst_interval_s"] if time.time() < self.burst_until else self.c["interval_s"]
 
     def run(self) -> None:
         with mss.MSS() as sct:
             monitor = primary_monitor(sct)
             log.info("Capturing primary monitor %sx%s every %ss",
                      monitor["width"], monitor["height"], self.c["interval_s"])
+            threading.Thread(target=lambda: (self.stop.wait(), self._wake.set()), daemon=True).start()
             while not self.stop.is_set():
                 started = time.monotonic()
                 try:
                     self.tick(sct, monitor)
                 except Exception:
                     log.exception("Capture tick failed")
-                self.stop.wait(max(0.0, self.c["interval_s"] - (time.monotonic() - started)))
+                self._wake.wait(max(0.0, self.interval() - (time.monotonic() - started)))
+                self._wake.clear()
 
     def tick(self, sct: mss.base.MSSBase, monitor: dict) -> None:
         title, process = foreground_window()
@@ -115,7 +127,7 @@ class ScreenCapture:
         img.save(self.cfg.frames_dir / name, "JPEG", quality=self.c["jpeg_quality"])
         self.timeline.append({
             "type": "frame", "ts": now, "path": f"frames/{name}", "score": round(score, 4),
-            "window": title_after, "process": process_after,
+            "window": title_after, "process": process_after, "screen": list(shot.size),
         })
         self.last_thumb = thumb
         self.last_saved = now

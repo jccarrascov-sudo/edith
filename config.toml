@@ -6,6 +6,8 @@ change_threshold = 0.02   # mean abs diff (0-1) on a 64x36 grayscale thumbnail t
 max_idle_s = 30           # save a frame anyway if nothing was saved for this long
 jpeg_quality = 70
 max_width = 1280
+burst_interval_s = 0.5    # after a click, capture this often...
+burst_s = 3.0             # ...for this long
 
 [audio]
 enabled = true

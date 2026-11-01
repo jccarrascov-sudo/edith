@@ -19,6 +19,8 @@ DEFAULTS: dict[str, dict] = {
         "max_idle_s": 30,
         "jpeg_quality": 70,
         "max_width": 1280,
+        "burst_interval_s": 0.5,
+        "burst_s": 3.0,
     },
     "audio": {
         "enabled": True,

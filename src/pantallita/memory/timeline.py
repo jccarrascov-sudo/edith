@@ -1,9 +1,11 @@
 """Append-only event log (buffer/timeline.jsonl) with a rolling retention window.
 
 Event shapes:
-  {"type": "frame", "ts", "path", "score", "window", "process"}
+  {"type": "frame", "ts", "path", "score", "window", "process", "screen"}  # screen = [w, h] px
   {"type": "window", "ts", "window", "process"}           # foreground window changed
   {"type": "transcript", "ts", "start", "end", "text", "lang"}
+  {"type": "click", "ts", "x", "y", "button", "window", "process", "element"}   # see actions.py
+  {"type": "field", "ts", "value", "window", "process", "element"}            # never passwords
 
 `ts` is a Unix timestamp (float). Paths are relative to buffer/.
 The file is shared between processes (`run` writes, `ask`/`status` may prune), so every

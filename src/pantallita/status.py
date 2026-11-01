@@ -35,7 +35,8 @@ def status(cfg: Config) -> None:
     tl_size = timeline.path.stat().st_size if timeline.path.exists() else 0
     total += tl_size
     print(f"  timeline  {len(events):>4} events {_size(tl_size):>9}  "
-          f"(frame {counts['frame']}, transcript {counts['transcript']}, window {counts['window']})")
+          f"(frame {counts['frame']}, click {counts['click']}, field {counts['field']}, "
+          f"transcript {counts['transcript']}, window {counts['window']})")
     if events:
         print(f"  oldest event {int(now - events[0]['ts'])} s ago, newest {int(now - events[-1]['ts'])} s ago")
     print(f"  total {_size(total)}")

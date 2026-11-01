@@ -20,6 +20,7 @@ SYSTEM_PROMPT = """\
 You are pantallita, an on-screen companion with a short memory of the user's computer.
 You receive what happened during the last {minutes} minutes:
 - a window history (which app/window was in front, with local times),
+- the user's clicks (with the UI element under them) and the values text fields settled on,
 - a transcript of the system audio, i.e. what came out of the speakers (videos, calls,
   music). It is NOT the user's microphone,
 - screenshots, each labeled with its local time and window.
@@ -132,6 +133,20 @@ def window_history(events: list[dict], now: float, limit: int = 60) -> list[str]
     return lines[-limit:]
 
 
+def action_lines(events: list[dict], now: float, limit: int = 80) -> list[str]:
+    """Clicks and settled text-field values, one short line each (the keyboard is never recorded)."""
+    lines = []
+    for e in events:
+        el = e.get("element") or {}
+        target = f'{el.get("kind", "?")} "{el.get("name", "")}"' if el else f'({e.get("x")},{e.get("y")})'
+        where = e.get("process") or "?"
+        if e["type"] == "click":
+            lines.append(f'- {hhmmss(e["ts"])} ({ago(e["ts"], now)}) {e["button"]} click on {target} in {where}')
+        elif e["type"] == "field":
+            lines.append(f'- {hhmmss(e["ts"])} ({ago(e["ts"], now)}) field {target} now = "{e["value"]}" in {where}')
+    return lines[-limit:]
+
+
 def build_messages(cfg: Config, timeline: Timeline, question: str,
                    opts: ContextOptions | None = None) -> tuple[list[dict], dict]:
     opts = opts or ContextOptions.from_config(cfg)
@@ -139,6 +154,7 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
     events = timeline.read()
     windows = [e for e in events if e["type"] == "window"]
     transcripts = [e for e in events if e["type"] == "transcript"]
+    actions = [e for e in events if e["type"] in ("click", "field")]
     frames = [e for e in events if e["type"] == "frame" and timeline.buffer_path(e["path"]).exists()]
     picked = select_frames(frames, cfg.ask["max_frames"], cfg.ask["recent_frames"])
 
@@ -148,6 +164,8 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
     else:
         text += [f'- {hhmmss(e["ts"])} ({ago(e["ts"], now)}) {e["process"] or "?"}: "{e["window"]}"'
                  for e in windows] or ["(none)"]
+    text += ["", "User actions: clicks and text-field values (oldest first):"]
+    text += action_lines(actions, now) or ["(none)"]
     text += ["", "System audio transcript (oldest first):"]
     text += [f'[{hhmmss(t["start"])}-{hhmmss(t["end"])}, {ago(t["start"], now)}] {t["text"]}'
              for t in (merge_transcripts(transcripts) if opts.compact_text else transcripts)]         or ["(no speech heard)"]
@@ -164,6 +182,7 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
     ]
     stats = {"images": sum(p["type"] == "image_url" for p in content), "frames_available": len(frames),
              "transcript_segments": len(transcripts), "window_changes": len(windows),
+             "actions": len(actions),
              "image_kb": image_bytes // 1024, "context_text": "\n".join(text)}
     return messages, stats
 
@@ -173,7 +192,7 @@ def ask(cfg: Config, question: str, dry_run: bool = False) -> str:
     messages, stats = build_messages(cfg, timeline, question)
     summary = (f"[pantallita] sending {stats['images']} images ({stats['image_kb']} KB base64, "
                f"{stats['frames_available']} frames in buffer), {stats['transcript_segments']} "
-               f"transcript segments, {stats['window_changes']} window events")
+               f"transcript segments, {stats['window_changes']} window events, {stats['actions']} actions")
     print(summary, file=sys.stderr)
     if dry_run:
         print(stats["context_text"])

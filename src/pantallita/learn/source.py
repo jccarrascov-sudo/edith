@@ -19,6 +19,7 @@ from ..config import ROOT
 log = logging.getLogger(__name__)
 
 SHEET_EXT = (".xlsx", ".xlsm")
+_INVISIBLE = re.compile("[​-‏‪-‮⁦-⁩﻿]")
 DATE_FORMATS = ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y")
 
 
@@ -137,6 +138,7 @@ def find_workbook(window_titles: list[str], extra_dirs: list[Path] | None = None
     # With "hide extensions" on (the Windows default) the title is just "invoices - Excel".
     stems = set()
     for title in window_titles:
+        title = _INVISIBLE.sub("", title)  # Excel wraps the name in bidi marks: "‪invoices‬"
         parts = [p.strip() for p in title.split(" - ")]
         if len(parts) >= 2 and parts[-1].lower() == "excel":
             stems.add(Path(parts[0]).stem.lower() if parts[0].lower().endswith(SHEET_EXT) else parts[0].lower())

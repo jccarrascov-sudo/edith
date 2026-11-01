@@ -73,6 +73,13 @@ class SegmentTests(unittest.TestCase):
         self.assertEqual(demo.url, URL)
         self.assertLess(demo.end, T0 + 40)  # what happened 2 min later is not part of it
 
+    def test_typing_in_the_address_bar_afterwards_is_not_part_of_the_form(self):
+        events = demo_events(self.rows[0])
+        addr = field(38, "Address and search bar", "youtube.com")
+        addr["url"] = "https://www.bing.com/search?q=kernel"
+        [demo] = seg_mod.find_demos(events + [addr])
+        self.assertNotIn("Address and search bar", demo.final_values)
+
     def test_terminal_where_the_user_asks_is_ignored(self):
         events = demo_events(self.rows[0])
         events += [field(100, "Command", "pantallita do", where=("Terminal", "WindowsTerminal.exe")),
@@ -119,6 +126,9 @@ class SourceTests(unittest.TestCase):
             self.assertEqual(src_mod.find_workbook(["invoices.xlsx - Saved - Excel"], [self.dir]),
                              self.dir / "invoices.xlsx")
             self.assertIsNone(src_mod.find_workbook(["Notes - Notepad"], [self.dir]))
+            # A real Excel title (Spanish Windows), bidi marks and double spaces included.
+            title = "‪invoices‬  -  Guardado en Este PC  -  Excel"
+            self.assertEqual(src_mod.find_workbook([title], [self.dir]), self.dir / "invoices.xlsx")
 
 
 def good_plan() -> dict:

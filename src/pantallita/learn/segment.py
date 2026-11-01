@@ -1,7 +1,8 @@
 """Find the user's demonstration in the timeline, after the fact (retroactive learning).
 
-A demonstration is a *form episode*: text fields filled in one app with no more than
-`max_gap_s` between consecutive edits, plus the clicks around them, ending with the click
+A demonstration is a *form episode*: text fields filled in one app (and, in a browser, on
+one page: a new URL starts a new episode, so the address bar never joins a form) with no
+more than `max_gap_s` between consecutive edits, plus the clicks around them, ending with the click
 that submits the form (a button clicked within `submit_s` after the last edit). Clicks and
 windows in between (e.g. copying values from Excel) belong to the episode too.
 """
@@ -80,7 +81,8 @@ def find_demos(events: list[dict], max_gap_s: float = 90.0, submit_s: float = 30
     runs: list[list[dict]] = []
     for f in fields:
         last = runs[-1][-1] if runs else None
-        if last and f["process"] == last["process"] and f["ts"] - last["ts"] <= max_gap_s:
+        if (last and f["process"] == last["process"] and f.get("url") == last.get("url")
+                and f["ts"] - last["ts"] <= max_gap_s):
             runs[-1].append(f)
         else:
             runs.append([f])

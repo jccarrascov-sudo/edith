@@ -211,3 +211,38 @@ class PlanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChooseTests(unittest.TestCase):
+    def setUp(self):
+        rows = make_invoices.generate()
+        mail = ("New message - Outlook", "olk.exe")
+        events = demo_events(rows[0]) + [field(303, "To", "ana@example.com", where=mail),
+                                         field(310, "Subject", "Monday", where=mail)]
+        self.demos = seg_mod.find_demos(events)
+
+    @staticmethod
+    def client(reply):
+        def chat(purpose, messages, **kwargs):
+            chat.prompt = messages[-1]["content"]
+            if isinstance(reply, Exception):
+                raise reply
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=reply))])
+        return SimpleNamespace(chat=chat)
+
+    def test_single_episode_needs_no_model(self):
+        seg, sure = seg_mod.choose(self.demos[1:], "whatever, 40 minutes ago", T0 + 400,
+                                   client=self.client(AssertionError("no call expected")))
+        self.assertTrue(sure)
+
+    def test_model_choice_and_spreadsheet_hint(self):
+        c = self.client('{"episode": 2, "confident": true}')
+        seg, sure = seg_mod.choose(self.demos, "do it with the rest", T0 + 400, c,
+                                   sources={id(self.demos[1]): "invoices.xlsx"})
+        self.assertEqual((seg.process, sure), ("chrome.exe", True))
+        self.assertIn("Values found in a row of invoices.xlsx", c.chat.prompt)
+
+    def test_model_failure_falls_back_to_time_and_is_not_sure(self):
+        seg, sure = seg_mod.choose(self.demos, "what I did 6 minutes ago", T0 + 400,
+                                   self.client(RuntimeError("network down")))
+        self.assertEqual((seg.process, sure), ("chrome.exe", False))

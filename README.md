@@ -70,8 +70,11 @@ Nothing has to be switched on before the task: Pantallita rewinds its memory.
 
 1. **Find the demonstration.** A *form episode* is a run of text fields filled in one app
    and one page (≤ 90 s between edits), plus the clicks around it, ending with the button
-   clicked right after the last edit. "N minutes ago" in the request picks the closest
-   episode; otherwise the latest. The user confirms it by its time.
+   clicked right after the last edit. People are vague about time, so with several
+   candidates Muse Spark reads the whole request ("the invoice thing", "like 5 minutes
+   ago", "do it with the rest" = values that came from a spreadsheet) and treats times as
+   rough hints; if it is not sure, the candidates are listed. The user confirms the one
+   picked by its time.
 2. **Find the source row.** The spreadsheet comes from the Excel window in the timeline
    (open workbooks via COM, else the usual folders). Every typed value is compared with
    every cell through the ways it can be shown (Excel display format, plain numbers,

@@ -118,3 +118,45 @@ def pick(segments: list[Segment], request: str = "", now: float | None = None) -
         return segments[0]
     target = (now or time.time()) - float(match.group(1).replace(",", ".")) * 60
     return min(segments, key=lambda s: min(abs(s.start - target), abs(s.end - target)))
+
+
+CHOOSE_PROMPT = """\
+The user asked an on-screen assistant to repeat something they did earlier. People are vague
+about time ("a moment ago", "like 5 minutes ago" may be 2 or 9 minutes) and often name the
+task by its content instead ("the invoice thing", "what I did in the portal"). Pick the
+recorded episode the request refers to. Treat any time in the request as a rough hint;
+the content wins when it points clearly at one episode. "The rest" / "the others" means
+more rows of the same data, so it points at an episode whose values came from a spreadsheet.
+If nothing tells them apart, the most recent one is the usual meaning.
+Reply with JSON only: {"episode": <number>, "confident": true|false}"""
+
+
+def choose(segments: list[Segment], request: str, now: float | None = None,
+           client=None, sources: dict[int, str] | None = None) -> tuple[Segment, bool]:
+    """(episode the request means, whether that is clear). One candidate needs no model call;
+    with several, Muse Spark reads the whole request; if it fails, the time-based pick is used.
+    `sources` maps id(segment) to the spreadsheet its values were found in, if any."""
+    now = now or time.time()
+    fallback = pick(segments, request, now)
+    if len(segments) == 1:
+        return segments[0], True
+    lines = []
+    for i, s in enumerate(segments, 1):
+        values = ", ".join(f'{k}="{v[:30]}"' for k, v in list(s.final_values.items())[:4])
+        found = (sources or {}).get(id(s))
+        lines.append(f"{i}. {s.describe(now)}. Values: {values}. "
+                     + (f"Values found in a row of {found}." if found else "Values not found in any spreadsheet."))
+    try:
+        import json
+
+        response = client.chat("learn: choose episode", max_tokens=1500, reasoning_effort="low", messages=[
+            {"role": "system", "content": CHOOSE_PROMPT},
+            {"role": "user", "content": f'Request: "{request}"\nEpisodes (most recent first):\n' + "\n".join(lines)}])
+        text = response.choices[0].message.content or ""
+        reply = json.loads(text[text.find("{"):text.rfind("}") + 1])
+        index = int(reply["episode"]) - 1
+        if 0 <= index < len(segments):
+            return segments[index], bool(reply.get("confident"))
+    except Exception:
+        pass
+    return fallback, False

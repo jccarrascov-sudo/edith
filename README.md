@@ -59,9 +59,31 @@ copy .env.example .env   # then put your Meta Model API key in META_API_KEY
 .venv\Scripts\python -m pantallita ask "what was the video about?"
 .venv\Scripts\python -m pantallita ask "..." --dry-run   # show the context, no API call
 .venv\Scripts\python -m pantallita status
+.venv\Scripts\python -m pantallita do "what I did 3 minutes ago, do it with the rest"
 .venv\Scripts\python -m unittest discover -s tests       # tests
 .venv\Scripts\python scripts\measure_tokens.py           # token measurements (counts only)
 ```
+
+## How it works: learning backwards (Phase 2)
+
+Nothing has to be switched on before the task: Pantallita rewinds its memory.
+
+1. **Find the demonstration.** A *form episode* is a run of text fields filled in one app
+   and one page (≤ 90 s between edits), plus the clicks around it, ending with the button
+   clicked right after the last edit. "N minutes ago" in the request picks the closest
+   episode; otherwise the latest. The user confirms it by its time.
+2. **Find the source row.** The spreadsheet comes from the Excel window in the timeline
+   (open workbooks via COM, else the usual folders). Every typed value is compared with
+   every cell through the ways it can be shown (Excel display format, plain numbers,
+   common date formats): the row matching most fields is the demonstrated one.
+3. **Plan with Muse Spark.** The recording, the sheet (headers, formats, the matched row)
+   and two key frames (the filled form, the confirmation page) become an intent and a JSON
+   plan of fixed blocks: `read_row`, `fill_field` (label ← column + transform), `click`,
+   `save`, `wait`, `verify`. Fields are addressed by their accessible names, which are what
+   UI Automation recorded and what Playwright's `get_by_label` uses.
+4. **Check the plan against the demo.** Replaying each transform on the demonstrated row
+   must give exactly what the user typed; otherwise the errors go back to the model
+   (max 3 attempts). Plans are saved to `state/plans/`.
 
 ## Demo environment
 

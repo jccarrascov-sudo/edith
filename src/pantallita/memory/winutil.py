@@ -49,3 +49,7 @@ def process_name(pid: int) -> str:
         return ""
     finally:
         _kernel32.CloseHandle(handle)
+
+
+def foreground_hwnd() -> int:
+    return _user32.GetForegroundWindow() or 0

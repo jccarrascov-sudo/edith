@@ -9,6 +9,7 @@ FieldWatcher: polls the focused UI Automation element. When an edit/combo field'
     {"type": "field", "ts", "value", "window", "process", "element"}.
     Elements with IsPassword are never read. There is no keyboard hook of any kind: the
     value is what the field shows, read the same way a screen reader does.
+In a browser, both also carry the page "url" (read from the address bar, never the page).
 Nothing is recorded while an excluded window is in front.
 """
 
@@ -25,7 +26,7 @@ from typing import Callable
 from ..config import Config
 from .capture import PrivacyGate
 from .timeline import Timeline
-from .winutil import foreground_window
+from .winutil import foreground_hwnd, foreground_window
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,26 @@ _user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
 _user32.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
 _user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 _kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+
+
+_url_cache: dict[tuple[int, str], str | None] = {}
+
+
+def browser_url(process: str, title: str) -> str | None:
+    """Address-bar URL of the foreground browser window, cached per (window, title)."""
+    from . import uia
+
+    if process.lower() not in uia.BROWSERS:
+        return None
+    key = (foreground_hwnd(), title)
+    if key not in _url_cache:
+        if len(_url_cache) > 200:
+            _url_cache.clear()
+        try:
+            _url_cache[key] = uia.address_bar_url(key[0])
+        except Exception:
+            _url_cache[key] = None
+    return _url_cache[key]
 
 
 def element_info(el) -> dict:
@@ -143,6 +164,9 @@ class ClickWatcher:
                  "window": title, "process": process}
         if el is not None:
             event["element"] = element_info(el)
+        url = browser_url(process, title)
+        if url:
+            event["url"] = url
         self.timeline.append(event)
         self.clicks += 1
 
@@ -197,8 +221,11 @@ class FieldWatcher:
         name = (control.Name or "").strip().replace("\n", " ")[:80]
         # Title and position change (page loads, scrolling); the field itself does not.
         key = (process, kind, name, control.AutomationId or "")
-        return key, {"kind": kind, "name": name, "automation_id": control.AutomationId or "",
-                     "rect": list(rect)}, value, title, process
+        info = {"kind": kind, "name": name, "automation_id": control.AutomationId or "", "rect": list(rect)}
+        url = browser_url(process, title)
+        if url:
+            info["url"] = url
+        return key, info, value, title, process
 
     def tick(self, focused, now: float) -> None:
         if focused == "excluded":
@@ -231,6 +258,9 @@ class FieldWatcher:
         if self._logged.get(key) == value:
             return
         self._logged[key] = value
-        self.timeline.append({"type": "field", "ts": now, "value": value, "window": title,
-                              "process": process, "element": info})
+        event = {"type": "field", "ts": now, "value": value, "window": title, "process": process,
+                 "element": {k: v for k, v in info.items() if k != "url"}}
+        if info.get("url"):
+            event["url"] = info["url"]
+        self.timeline.append(event)
         self.changes += 1

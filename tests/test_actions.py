@@ -29,9 +29,10 @@ class Base(unittest.TestCase):
         self.cfg = fresh_config()
         self.timeline = Timeline(self.cfg)
         self.window = ("Invoice Portal - Edge", "msedge.exe")
-        p = mock.patch.object(actions, "foreground_window", lambda: self.window)
-        p.start()
-        self.addCleanup(p.stop)
+        for p in (mock.patch.object(actions, "foreground_window", lambda: self.window),
+                  mock.patch.object(actions, "browser_url", lambda process, title: None)):
+            p.start()
+            self.addCleanup(p.stop)
 
     def events(self, kind):
         return [e for e in self.timeline.read(since=0) if e["type"] == kind]
@@ -149,6 +150,17 @@ class NoKeyboardTests(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             for word in forbidden:
                 self.assertNotIn(word, text, f"{word} found in {path.name}")
+
+
+class UrlTests(unittest.TestCase):
+    def test_address_bar_text_becomes_a_url(self):
+        self.assertEqual(uia.normalize_url("127.0.0.1:8765/"), "http://127.0.0.1:8765/")
+        self.assertEqual(uia.normalize_url("example.com/a?b=1"), "https://example.com/a?b=1")
+        self.assertEqual(uia.normalize_url("http://localhost:8765"), "http://localhost:8765")
+        for text in ("127.0.0.1:8765/", "localhost:8000", "dev.meta.ai/docs", "https://x.org"):
+            self.assertRegex(text, uia._URLISH)
+        for text in ("Andes Test Supply SAC", "1250.50", "10/09/2026", "Search Google or type a URL"):
+            self.assertNotRegex(text, uia._URLISH)
 
 
 class BurstTests(unittest.TestCase):

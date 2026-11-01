@@ -7,6 +7,7 @@ Password fields (IsPassword) never have their value read. The keyboard is never 
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 
@@ -136,3 +137,43 @@ def element_at(x: int, y: int) -> Element | None:
         or control.ControlTypeName.removesuffix("Control").lower()
     return Element(kind, (control.Name or "").strip()[:80], None if is_password else _value(control),
                    _rect(control), is_password)
+
+
+BROWSERS = {"chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe"}
+_URLISH = re.compile(r"^(?:[a-z][a-z0-9+.-]*://)?(?:localhost|[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}|\d{1,3}(?:\.\d{1,3}){3})"
+                     r"(?::\d+)?(?:[/?#]\S*)?$", re.I)
+
+
+def normalize_url(text: str) -> str:
+    """Browsers hide the scheme in the address bar; local addresses are http, the rest https."""
+    text = text.strip()
+    if "://" in text:
+        return text
+    host = text.split("/")[0].split(":")[0]
+    local = host in ("localhost", "127.0.0.1") or host.startswith(("192.168.", "10."))
+    return ("http://" if local else "https://") + text
+
+
+def address_bar_url(hwnd: int, budget_s: float = 0.6) -> str | None:
+    """URL in a browser window's address bar. Web page content (Document) is never entered."""
+    root = auto.ControlFromHandle(hwnd)
+    if root is None:
+        return None
+    deadline = time.monotonic() + budget_s
+    stack = [(root, 0)]
+    while stack and time.monotonic() < deadline:
+        control, depth = stack.pop()
+        try:
+            type_name = control.ControlTypeName
+            if type_name == "DocumentControl":
+                continue
+            if type_name == "EditControl" and not control.GetPropertyValue(auto.PropertyId.IsPasswordProperty):
+                value = (_value(control) or "").strip()
+                if _URLISH.match(value):
+                    return normalize_url(value)
+            if depth < 14:
+                children = control.GetChildren()
+                stack.extend((c, depth + 1) for c in reversed(children))
+        except Exception:
+            continue
+    return None

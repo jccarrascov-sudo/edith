@@ -84,6 +84,10 @@ def main(argv: list[str] | None = None) -> None:
     p_ask.add_argument("question")
     p_ask.add_argument("--dry-run", action="store_true", help="show the context, do not call the API")
     sub.add_parser("status", help="show what is in the buffer")
+    p_do = sub.add_parser("do", help='learn from what you just did, e.g. do "do the rest"')
+    p_do.add_argument("request", nargs="?", default="do the rest",
+                      help='e.g. "what I did 5 minutes ago, do it with the rest"')
+    p_do.add_argument("--yes", action="store_true", help="do not ask to confirm the demonstration")
     p_cost = sub.add_parser("cost", help="show the API cost of the current session")
     p_cost.add_argument("--new", action="store_true", help="start a new cost session")
     args = parser.parse_args(argv)
@@ -109,6 +113,10 @@ def main(argv: list[str] | None = None) -> None:
         if args.new:
             meter.new_session()
         print(meter.summary())
+    elif args.command == "do":
+        from .learn.cli import do_the_rest
+        Timeline(cfg).prune()
+        sys.exit(do_the_rest(cfg, args.request, confirm=not args.yes))
     elif args.command == "status":
         Timeline(cfg).prune()
         from .status import status

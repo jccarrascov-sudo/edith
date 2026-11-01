@@ -36,5 +36,8 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
+# Local state (API cost ledger, session)
+state/
+
 # Generated demo data (portal DB, invoices.xlsx)
 demo/data/

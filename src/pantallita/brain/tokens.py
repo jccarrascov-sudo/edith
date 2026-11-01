@@ -100,3 +100,10 @@ def jpeg_b64(img: Image.Image, quality: int = 75) -> str:
     out = io.BytesIO()
     img.convert("RGB").save(out, "JPEG", quality=quality)
     return base64.b64encode(out.getvalue()).decode("ascii")
+
+
+def png_b64(img: Image.Image) -> str:
+    """Lossless encoding, for images whose exact pixels matter (e.g. SAM masks)."""
+    out = io.BytesIO()
+    img.convert("RGB").save(out, "PNG", optimize=True)
+    return base64.b64encode(out.getvalue()).decode("ascii")

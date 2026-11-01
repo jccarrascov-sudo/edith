@@ -69,6 +69,8 @@ def main(argv: list[str] | None = None) -> None:
     p_ask.add_argument("question")
     p_ask.add_argument("--dry-run", action="store_true", help="show the context, do not call the API")
     sub.add_parser("status", help="show what is in the buffer")
+    p_cost = sub.add_parser("cost", help="show the API cost of the current session")
+    p_cost.add_argument("--new", action="store_true", help="start a new cost session")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING,
@@ -85,6 +87,12 @@ def main(argv: list[str] | None = None) -> None:
         from .brain.ask import ask
         Timeline(cfg).prune()
         ask(cfg, args.question, dry_run=args.dry_run)
+    elif args.command == "cost":
+        from .brain.client import CostMeter
+        meter = CostMeter(float(cfg.budget["session_limit_usd"]), float(cfg.budget["session_idle_hours"]))
+        if args.new:
+            meter.new_session()
+        print(meter.summary())
     elif args.command == "status":
         Timeline(cfg).prune()
         from .status import status

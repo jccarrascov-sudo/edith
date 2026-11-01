@@ -30,6 +30,10 @@ diff_crop_max_area = 0.6  # if more than this fraction changed, send the whole f
 max_output_tokens = 4000   # includes reasoning tokens
 reasoning_effort = "low"   # minimal | low | medium | high | xhigh | max
 
+[budget]
+session_limit_usd = 5.0   # calls stop when a session costs more than this
+session_idle_hours = 3    # a new session starts after this long without API calls
+
 # If the foreground window matches any of these (case-insensitive substring),
 # nothing is captured: no frame, no window title, no process name.
 [exclude]

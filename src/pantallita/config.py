@@ -40,6 +40,7 @@ DEFAULTS: dict[str, dict] = {
         "max_output_tokens": 4000,
         "reasoning_effort": "low",
     },
+    "budget": {"session_limit_usd": 5.0, "session_idle_hours": 3},
     "exclude": {"titles": [], "processes": []},
 }
 
@@ -50,6 +51,7 @@ class Config:
     audio: dict
     retention: dict
     ask: dict
+    budget: dict
     exclude: dict
     root: Path
 

@@ -11,7 +11,7 @@ from datetime import datetime
 from PIL import Image
 
 from . import tokens
-from ..config import Config, load_api_settings
+from ..config import Config
 from ..memory.timeline import Timeline
 
 log = logging.getLogger(__name__)
@@ -179,13 +179,12 @@ def ask(cfg: Config, question: str, dry_run: bool = False) -> str:
         print(stats["context_text"])
         return ""
 
-    from openai import OpenAI
+    from .client import MetaClient
 
-    api = load_api_settings()
-    client = OpenAI(api_key=api.api_key, base_url=api.base_url)
+    client = MetaClient(cfg)
     t0 = time.monotonic()
-    response = client.chat.completions.create(
-        model=api.model, messages=messages, max_tokens=cfg.ask["max_output_tokens"],
+    response = client.chat(
+        "ask", messages=messages, max_tokens=cfg.ask["max_output_tokens"],
         reasoning_effort=cfg.ask["reasoning_effort"])
     answer = response.choices[0].message.content or ""
     print(answer)
@@ -194,8 +193,11 @@ def ask(cfg: Config, question: str, dry_run: bool = False) -> str:
     if usage:
         details = getattr(usage, "completion_tokens_details", None)
         reasoning = getattr(details, "reasoning_tokens", None) if details else None
-        print(f"[pantallita] {api.model}: {usage.prompt_tokens} input tokens, "
+        cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+        print(f"[pantallita] {client.model}: {usage.prompt_tokens} input tokens ({cached} cached), "
               f"{usage.completion_tokens} output tokens"
               + (f" ({reasoning} reasoning)" if reasoning else "")
-              + f", {stats['images']} images, {time.monotonic() - t0:.1f}s", file=sys.stderr)
+              + f", {stats['images']} images, {time.monotonic() - t0:.1f}s, "
+              f"${response.pantallita_cost:.4f}", file=sys.stderr)
+        print(f"[pantallita] {client.meter.summary()}", file=sys.stderr)
     return answer

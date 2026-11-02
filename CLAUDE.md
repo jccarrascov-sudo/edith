@@ -114,7 +114,10 @@ every row and emits events (row in, block done, row out, error in block X) for t
 src/pantallita/
   memory/   capture.py actions.py audio.py timeline.py winutil.py uia.py   (Phase 1, done)
   brain/    ask.py tokens.py client.py (costs + brake)            (ask working)
-  workshop/ ui/ vision/ detect/                                   (later phases)
+  learn/    segment.py source.py plan.py cli.py                  (Phase 2, done)
+  workshop/ codegen.py runner.py sandbox.py build.py cli.py       (Phase 3, done)
+  vision/   sam.py
+  ui/ detect/                                                     (later phases)
 demo/       portal/app.py make_invoices.py demo_reset.py
 scripts/    test_api.py measure_tokens.py install_hooks.py
 hooks/      pre-commit

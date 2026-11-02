@@ -88,6 +88,36 @@ Nothing has to be switched on before the task: Pantallita rewinds its memory.
    must give exactly what the user typed; otherwise the errors go back to the model
    (max 3 attempts). Plans are saved to `state/plans/`.
 
+## How it works: fabricate and verify (Phase 3)
+
+1. **Code per block.** Muse Spark writes one small Playwright function per block,
+   `def run(page, row, ctx)`, from the plan and the page's accessibility snapshot (text,
+   cheaper than a screenshot). Fields and buttons are found by accessible name.
+2. **Guard.** Generated code is parsed before it runs: exactly one `run` function, no
+   imports, no file/OS access, no dunder or `str.format` escapes; it executes with a
+   minimal set of builtins. The browser is the only thing it can touch.
+3. **Verify with the user's demonstration.** The machine replays the demonstrated row in a
+   *sandbox* copy of the app (same portal version, temporary database) and gets two stamps:
+   - **block stamp**: each `fill_field` must leave in its field exactly what the user typed;
+   - **record stamp**: the stored record must equal the user's own submission, column by column.
+4. **Self-repair.** A block that raises or mismatches is regenerated *on its own* with the
+   error, and the demo is replayed (max 3 rounds). Example from a test run: a date block
+   sabotaged to `%Y-%m-%d` was caught by the block stamp (the portal accepts both formats,
+   so the record alone would not have caught it) and only that block was rewritten.
+5. **Workshop.** A machine that passes is stored in `tools/<name>/` (`plan.json`,
+   `blocks/*.py`, `verification.json`, `runs/*.jsonl` with every row/block event) and runs
+   on the remaining rows headless, with no mouse.
+
+```powershell
+.venv\Scripts\python -m pantallita build            # latest plan -> verified machine -> run the rest
+.venv\Scripts\python -m pantallita machine          # list the workshop
+.venv\Scripts\python -m pantallita machine "invoice runner"
+```
+
+First real run (user's own demo in Edge, portal v1): code for 9 blocks in 8.5 s ($0.009),
+verification passed on attempt 1 (11/11 checks), the other 29 invoices done in 5 s;
+an independent check of the portal database against the Excel file gave **30/30 exact**.
+
 ## Demo environment
 
 A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitious invoices

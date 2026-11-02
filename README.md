@@ -222,7 +222,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
 | SAM 3.1 via the Meta Model API | Segmenting UI elements (remote API) | Meta terms |
 | Muse Image via the Meta Model API (planned) | Mascot look (optional) | Meta terms |
-| [PySide6](https://doc.qt.io/qtforpython-6/) (Qt for Python) (planned) | Mascot overlay, launch gesture, ghost fan | LGPL-3.0 |
+| [PySide6-Essentials](https://doc.qt.io/qtforpython-6/) (Qt for Python) | Mascot window, launch gesture, ghost fan (drawn with QPainter) | LGPL-3.0 |
 
 No images, sounds or other assets are included.
 

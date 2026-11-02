@@ -93,6 +93,9 @@ def main(argv: list[str] | None = None) -> None:
     p_build = sub.add_parser("build", help="fabricate and verify a machine from a plan (default: the latest)")
     p_build.add_argument("plan", nargs="?", type=Path)
     p_build.add_argument("--yes", action="store_true", help="run it on the other rows without asking")
+    p_comp = sub.add_parser("companion", help="the inventor on screen (with memory running)")
+    p_comp.add_argument("--no-memory", action="store_true", help="only the inventor, no recording")
+    p_comp.add_argument("--duration", type=float, help="quit after N seconds (for tests)")
     p_machine = sub.add_parser("machine", help="run a machine from the workshop (no name: list them)")
     p_machine.add_argument("name", nargs="?")
     p_machine.add_argument("--yes", action="store_true", help="send without asking")
@@ -107,7 +110,8 @@ def main(argv: list[str] | None = None) -> None:
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
-    _dpi_aware()
+    if args.command != "companion":  # Qt sets per-monitor-v2 awareness itself
+        _dpi_aware()
     cfg = load_config()
     if args.command == "run":
         run(cfg, args.duration)
@@ -132,6 +136,14 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "build":
         from .workshop.cli import build_and_run
         sys.exit(build_and_run(cfg, args.plan, confirm=not args.yes))
+    elif args.command == "companion":
+        from .ui.app import main as companion_main
+        if args.duration:
+            from PySide6.QtCore import QTimer
+            from PySide6.QtWidgets import QApplication
+            app = QApplication(sys.argv)
+            QTimer.singleShot(int(args.duration * 1000), app.quit)
+        sys.exit(companion_main(cfg, memory=not args.no_memory))
     elif args.command == "machine":
         from .workshop.cli import find_tool, list_tools, run_machine
         if not args.name:

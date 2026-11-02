@@ -43,6 +43,7 @@ DEFAULTS: dict[str, dict] = {
         "reasoning_effort": "low",
     },
     "budget": {"session_limit_usd": 5.0, "session_idle_hours": 3},
+    "ui": {"language": "en", "launch_modifier": "ctrl"},
     "exclude": {"titles": [], "processes": []},
 }
 
@@ -54,6 +55,7 @@ class Config:
     retention: dict
     ask: dict
     budget: dict
+    ui: dict
     exclude: dict
     root: Path
 

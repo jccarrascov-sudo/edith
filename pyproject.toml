@@ -24,6 +24,7 @@ dependencies = [
     "openpyxl",
     "meta-sam-parser",
     "playwright",
+    "PySide6-Essentials",
 ]
 
 [tool.setuptools.packages.find]

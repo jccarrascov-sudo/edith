@@ -40,6 +40,10 @@ def run(page, row, ctx):
 - save presses the submit button. wait waits for the confirmation (use expect(...).to_be_visible()
   or page.wait_for_url with a timeout of at most 10000 ms). verify raises AssertionError
   with a short message if the page does not confirm success.
+- NEVER write a data value in the code (no client names, amounts, dates from the example
+  row): every value must come from row["<column>"] through transform(...). Code with a data
+  value written in it is rejected.
+- Each block has a "contract" (what it must achieve, by meaning); honour it.
 - Keep each function short. No comments needed.
 
 Reply with ONE JSON object mapping block id -> the full source of its function, e.g.
@@ -82,6 +86,49 @@ def check_code(source: str) -> None:
         # are fine because their expressions are part of the tree checked here.
         if isinstance(node, ast.Attribute) and (node.attr.startswith("_") or node.attr in ("format", "format_map")):
             raise UnsafeCode(f"the attribute {node.attr!r} is not allowed in a block")
+
+
+def _norm(value) -> str:
+    return " ".join(str(value).split()).casefold()
+
+
+def data_values(rows: list[dict], typed: dict[str, str] | None = None) -> tuple[set[str], set[float]]:
+    """Every data value a block must never contain literally: cell texts and typed values."""
+    texts, numbers = set(), set()
+    for row in rows:
+        for v in row.values():
+            if v is None or isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                numbers.add(round(float(v), 2))
+            text = _norm(v)
+            if len(text) >= 3:
+                texts.add(text)
+    for v in (typed or {}).values():
+        if len(_norm(v)) >= 3:
+            texts.add(_norm(v))
+    return texts, numbers
+
+
+def check_anti_cheat(source: str, block: dict, texts: set[str], numbers: set[float]) -> None:
+    """No data value written in the code: every value has to come from a column of `row`.
+
+    A fill_field must read row[...]; no block may contain a string equal to a cell value or a
+    typed value, nor a number equal to a numeric cell (timeouts and indexes are fine)."""
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and _norm(node.value) in texts:
+            raise UnsafeCode(f"anti-cheat: the data value {node.value!r} is written in the code; "
+                             "take it from row[<column>] instead")
+        if (isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
+                and round(float(node.value), 2) in numbers and float(node.value) not in (0, 1, 2)):
+            raise UnsafeCode(f"anti-cheat: the data value {node.value!r} is written in the code; "
+                             "take it from row[<column>] instead")
+    if block.get("type") == "fill_field":
+        reads_row = any(isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name) and n.value.id == "row"
+                        for n in ast.walk(tree))
+        if not reads_row:
+            raise UnsafeCode(f'anti-cheat: a fill_field must take its value from row["{block.get("column")}"]')
 
 
 def compile_block(source: str, helpers: dict):

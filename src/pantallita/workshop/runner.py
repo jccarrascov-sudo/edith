@@ -1,11 +1,12 @@
 """Run a machine: every row goes through the blocks, in a headless browser (no mouse).
 
 Events (for the log and for the UI that animates cards and blocks):
-  {"event": "run_start", "rows": n}
+  {"event": "run_start", "rows": n, "level": "page"}
   {"event": "row_in", "row": i}
+  {"event": "row_skipped", "row": i, "reason": "empty Amount"}      # reported, the run goes on
   {"event": "block_done", "row": i, "block": id, "ms": t}
   {"event": "block_error", "row": i, "block": id, "error": "..."}
-  {"event": "row_out", "row": i, "ok": bool, "filled": {...}}
+  {"event": "row_out", "row": i, "ok": bool, "filled": {...}, "level": "page"}
   {"event": "run_end", "ok": n_ok, "failed": n_failed, "seconds": s}
 """
 
@@ -19,6 +20,7 @@ from typing import Callable
 from ..learn.plan import apply_transform
 from . import codegen
 
+LEVEL = "page"  # Playwright by labels; the network level comes in Phase 5
 Event = dict
 EventFn = Callable[[Event], None]
 
@@ -31,6 +33,7 @@ class RowResult:
     error_block: str | None = None
     error: str | None = None
     seconds: float = 0.0
+    skipped: str | None = None  # why the row was not sent (e.g. an empty cell)
 
 
 def transform(value, spec: dict) -> str:
@@ -64,22 +67,34 @@ def run_rows(plan: dict, code: dict[str, str], rows: list[tuple[int, dict]], url
         raise
     results: list[RowResult] = []
     t_run = time.monotonic()
-    emit({"event": "run_start", "rows": len(rows)})
+    emit({"event": "run_start", "rows": len(rows), "level": LEVEL})
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=headless)
         page = browser.new_page()
         page.set_default_timeout(timeout_ms)
         try:
             for index, row in rows:
+                empty = empty_cells(plan, row)
+                if empty:
+                    reason = "empty " + ", ".join(empty)
+                    emit({"event": "row_skipped", "row": index, "reason": reason})
+                    results.append(RowResult(index, False, skipped=reason))
+                    continue
                 result = run_one(page, plan, blocks, index, row, url, emit)
                 results.append(result)
                 if not result.ok and stop_on_error:
                     break
         finally:
             browser.close()
-    emit({"event": "run_end", "ok": sum(r.ok for r in results), "failed": sum(not r.ok for r in results),
-          "seconds": round(time.monotonic() - t_run, 2)})
+    emit({"event": "run_end", "ok": sum(r.ok for r in results),
+          "failed": sum(not r.ok and not r.skipped for r in results), "skipped": sum(bool(r.skipped) for r in results),
+          "seconds": round(time.monotonic() - t_run, 2), "level": LEVEL})
     return results
+
+
+def empty_cells(plan: dict, row: dict) -> list[str]:
+    cols = [b["column"] for b in plan["blocks"] if b["type"] == "fill_field"]
+    return [c for c in cols if row.get(c) is None or (isinstance(row.get(c), str) and not row[c].strip())]
 
 
 def run_one(page, plan: dict, blocks: dict[str, Callable], index: int, row: dict, url: str,
@@ -99,8 +114,8 @@ def run_one(page, plan: dict, blocks: dict[str, Callable], index: int, row: dict
         except Exception as exc:
             error = short_error(exc)
             emit({"event": "block_error", "row": index, "block": b["id"], "error": error})
-            emit({"event": "row_out", "row": index, "ok": False, "filled": ctx.get("filled", {})})
+            emit({"event": "row_out", "row": index, "ok": False, "filled": ctx.get("filled", {}), "level": LEVEL})
             return RowResult(index, False, ctx.get("filled", {}), b["id"], error, time.monotonic() - t_row)
         emit({"event": "block_done", "row": index, "block": b["id"], "ms": round((time.monotonic() - t0) * 1000)})
-    emit({"event": "row_out", "row": index, "ok": True, "filled": ctx.get("filled", {})})
+    emit({"event": "row_out", "row": index, "ok": True, "filled": ctx.get("filled", {}), "level": LEVEL})
     return RowResult(index, True, ctx.get("filled", {}), seconds=time.monotonic() - t_row)

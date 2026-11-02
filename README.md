@@ -49,7 +49,7 @@ The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
 ```powershell
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -e .
-copy .env.example .env   # then put your Meta Model API key in META_API_KEY
+copy .env.example .env   # then put your Meta Model API key in MODEL_API_KEY
 ```
 
 ## Usage
@@ -134,7 +134,7 @@ The Excel is written to `demo/data/invoices.xlsx`. All names and tax IDs are inv
 
 ## Safety hook
 
-`.venv\Scripts\python scripts\install_hooks.py` enables `hooks/pre-commit`, which blocks
+`.venv\Scripts\python scripts\install_hooks.py` enables `.githooks/pre-commit`, which blocks
 commits containing `.env` files, anything under `buffer/`, audio/database/timeline files,
 or any line that contains a secret value from the local `.env`.
 

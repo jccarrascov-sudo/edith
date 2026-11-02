@@ -1,6 +1,6 @@
 #!/bin/sh
 # Pantallita safety hook: never commit secrets or private capture data.
-# Installed with: .venv\Scripts\python scripts\install_hooks.py  (sets core.hooksPath=hooks)
+# Installed with: .venv\Scripts\python scripts\install_hooks.py  (sets core.hooksPath=.githooks)
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 status=0
@@ -36,6 +36,15 @@ if [ -f .env ]; then
         done || status=1
     fi
 fi
+
+# Block lines that look like credentials, whatever file they are in (.env.example is exempt).
+key_like='(api[_-]?key|secret|token|password)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9_.+/=-]{20,}["'"'"']|Bearer [A-Za-z0-9_.+/=-]{20,}|(^|[^A-Za-z0-9])(sk|pk|rk)-[A-Za-z0-9_-]{20,}'
+for f in $staged; do
+    [ "$(basename "$f")" = ".env.example" ] && continue
+    if git diff --cached -U0 --no-color -- "$f" | grep '^+' | grep -v '^+++' | grep -qiE -- "$key_like"; then
+        block "'$f' (a staged line looks like an API key or token)"
+    fi
+done
 
 if [ $status -ne 0 ]; then
     echo "pre-commit: commit aborted. Unstage those files (git restore --staged <file>)." >&2

@@ -1,4 +1,4 @@
-"""Point git at the versioned hooks/ folder so the safety pre-commit hook always runs.
+"""Point git at the versioned .githooks/ folder so the safety pre-commit hook always runs.
 
 Run: .venv\\Scripts\\python scripts\\install_hooks.py
 """
@@ -10,10 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
-    subprocess.run(["git", "config", "core.hooksPath", "hooks"], cwd=ROOT, check=True)
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=ROOT, check=True)
     hooks_path = subprocess.run(["git", "config", "core.hooksPath"], cwd=ROOT,
                                 capture_output=True, text=True, check=True).stdout.strip()
-    print(f"core.hooksPath = {hooks_path}  ({ROOT / 'hooks' / 'pre-commit'})")
+    print(f"core.hooksPath = {hooks_path}  ({ROOT / '.githooks' / 'pre-commit'})")
 
 
 if __name__ == "__main__":

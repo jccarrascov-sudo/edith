@@ -47,7 +47,10 @@ Reply with ONE JSON object, no prose, with exactly these keys:
   "intent": "one sentence: what the user does, for each row",
   "blocks": [ ...in execution order... ]
 }
-Block shapes (ids b1, b2, ... in order; "title" is a 2-5 word label shown on the block):
+Block shapes (ids b1, b2, ... in order; "title" is a 2-5 word label shown on the block;
+every block also has "contract": one sentence saying what the block must achieve in terms
+of MEANING, not of page details, so it can be repaired if the page changes, e.g.
+"Put the Amount column, as a number with 2 decimals, into the field that means the invoice amount."):
   {"id","type":"read_row","title"}
   {"id","type":"fill_field","title","field":{"label": <exact field name from the recording>,
        "kind":"edit"|"combo"}, "column": <exact sheet header>, "transform": <transform>}
@@ -66,6 +69,33 @@ demonstrated row produces EXACTLY the typed text; end with save, then wait and v
 
 
 # --- transforms ---------------------------------------------------------------------------
+
+def default_contract(block: dict) -> str:
+    """A meaning-level description of a block, for plans whose model reply had none."""
+    t = block.get("type")
+    if t == "fill_field":
+        tr = block.get("transform") or {}
+        how = {"date": f'as a date ({tr.get("format", "")})', "number": f'as a number with {tr.get("decimals", 2)} decimals',
+               "display": "as Excel shows it"}.get(tr.get("kind"), "as text")
+        return (f'Put the "{block.get("column")}" column, {how}, into the field that means '
+                f'"{block.get("field", {}).get("label")}".')
+    if t == "save":
+        return f'Submit the form with the button that means "{block.get("target", {}).get("name")}".'
+    if t == "click":
+        return f'Press the control that means "{block.get("target", {}).get("name")}".'
+    if t == "wait":
+        return "Wait until the page confirms the submission."
+    if t == "verify":
+        return "Check that the page confirms the row was accepted."
+    return "Take the next row of the sheet."
+
+
+def ensure_contracts(plan: dict) -> dict:
+    for b in plan.get("blocks", []):
+        if not isinstance(b.get("contract"), str) or not b["contract"].strip():
+            b["contract"] = default_contract(b)
+    return plan
+
 
 def apply_transform(value, transform: dict, number_format: str = "General") -> str:
     kind = transform.get("kind", "text")
@@ -279,6 +309,7 @@ def make_plan(cfg: Config, seg: seg_mod.Segment, request: str, all_events: list[
     if errors:
         raise LearnError(f"I couldn't get a plan that reproduces your demo after {max_attempts} tries.")
 
+    ensure_contracts(plan)
     plan["source"] = {"path": str(path), "sheet": sheet.name, "header_row": 1, "rows": len(sheet.rows)}
     plan["target"] = {"url": seg.url, "app": seg.process, "page_title": seg.fields[-1].get("window", "")}
     plan["demo"] = {"row_index": match.index, "values": typed, "submit": submit_name,

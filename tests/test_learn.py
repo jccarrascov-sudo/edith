@@ -161,6 +161,16 @@ class PlanTests(unittest.TestCase):
         cls.typed = {"Client": r["Client"], "Tax ID (RUC)": r["Tax ID"], "Invoice date": r["Date"].strftime("%d/%m/%Y"),
                      "Amount (PEN)": f'{r["Amount"]:,.2f}', "Description": r["Description"]}
 
+    def test_every_block_gets_a_meaning_level_contract(self):
+        plan = plan_mod.ensure_contracts(good_plan())
+        self.assertTrue(all(b["contract"] for b in plan["blocks"]))
+        amount = next(b for b in plan["blocks"] if b.get("column") == "Amount")
+        self.assertIn('"Amount" column, as a number with 2 decimals', amount["contract"])
+        self.assertIn('field that means "Amount (PEN)"', amount["contract"])
+        plan["blocks"][1]["contract"] = "Put the client name where the client goes."
+        self.assertEqual(plan_mod.ensure_contracts(plan)["blocks"][1]["contract"],
+                         "Put the client name where the client goes.")  # the model's own is kept
+
     def test_transforms(self):
         self.assertEqual(plan_mod.apply_transform(datetime(2026, 9, 10), {"kind": "date", "format": "%d/%m/%Y"}), "10/09/2026")
         self.assertEqual(plan_mod.apply_transform(4216.96, {"kind": "number", "decimals": 2, "thousands": True}), "4,216.96")

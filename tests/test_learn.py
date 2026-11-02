@@ -108,12 +108,16 @@ class SourceTests(unittest.TestCase):
         self.assertEqual(self.sheet.formats["Date"].upper(), "DD/MM/YYYY")
 
     def test_typed_values_find_their_row_and_columns(self):
-        row = self.sheet.rows[6]
-        typed = {"Client": row["Client"], "Tax ID (RUC)": row["Tax ID"],
-                 "Invoice date": row["Date"].strftime("%d/%m/%Y"), "Amount (PEN)": f'{row["Amount"]:.2f}',
-                 "Description": row["Description"]}
-        match = src_mod.match_row(self.sheet, typed)
-        self.assertEqual(match.index, 6)
+        for index in (2, 5, 6, 12):  # plain, text amount "1,787.26", ISO text date, accents
+            row = self.sheet.rows[index]
+            typed = {"Client": row["Client"], "Tax ID (RUC)": row["Tax ID"],
+                     "Invoice date": self.sheet.display(row, "Date"), "Amount (PEN)": self.sheet.display(row, "Amount"),
+                     "Description": row["Description"]}
+            match = src_mod.match_row(self.sheet, typed)
+            self.assertEqual(match.index, index)
+            self.assertEqual(match.matched, 5)
+        self.assertEqual(self.sheet.rows[5]["Amount"], "1,787.26")
+        self.assertIsNone(self.sheet.rows[17]["Amount"])
         self.assertEqual(match.columns, {"Client": "Client", "Tax ID (RUC)": "Tax ID", "Invoice date": "Date",
                                          "Amount (PEN)": "Amount", "Description": "Description"})
 

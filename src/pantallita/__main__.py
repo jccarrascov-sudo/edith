@@ -7,6 +7,7 @@ import logging
 import sys
 import threading
 import time
+from pathlib import Path
 
 from .config import load_config
 from .memory.timeline import Timeline
@@ -88,6 +89,12 @@ def main(argv: list[str] | None = None) -> None:
     p_do.add_argument("request", nargs="?", default="do the rest",
                       help='e.g. "what I did 5 minutes ago, do it with the rest"')
     p_do.add_argument("--yes", action="store_true", help="do not ask to confirm the demonstration")
+    p_do.add_argument("--plan-only", action="store_true", help="stop after making the plan")
+    p_build = sub.add_parser("build", help="fabricate and verify a machine from a plan (default: the latest)")
+    p_build.add_argument("plan", nargs="?", type=Path)
+    p_build.add_argument("--yes", action="store_true", help="run it on the other rows without asking")
+    p_machine = sub.add_parser("machine", help="run a machine from the workshop (no name: list them)")
+    p_machine.add_argument("name", nargs="?")
     p_cost = sub.add_parser("cost", help="show the API cost of the current session")
     p_cost.add_argument("--new", action="store_true", help="start a new cost session")
     args = parser.parse_args(argv)
@@ -116,7 +123,21 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "do":
         from .learn.cli import do_the_rest
         Timeline(cfg).prune()
-        sys.exit(do_the_rest(cfg, args.request, confirm=not args.yes))
+        code = do_the_rest(cfg, args.request, confirm=not args.yes)
+        if code == 0 and not args.plan_only:
+            from .workshop.cli import build_and_run
+            code = build_and_run(cfg, confirm=not args.yes)
+        sys.exit(code)
+    elif args.command == "build":
+        from .workshop.cli import build_and_run
+        sys.exit(build_and_run(cfg, args.plan, confirm=not args.yes))
+    elif args.command == "machine":
+        from .workshop.cli import find_tool, list_tools, run_machine
+        if not args.name:
+            list_tools()
+        else:
+            tool = find_tool(args.name)
+            sys.exit(run_machine(tool) if tool else print(f"No machine called {args.name!r}.") or 1)
     elif args.command == "status":
         Timeline(cfg).prune()
         from .status import status

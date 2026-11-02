@@ -1,0 +1,48 @@
+# Build log
+
+Everything below was built during the Meta Global AI Developer Hackathon 2026 (from Oct 26).
+Numbers are from real runs; failures are listed too.
+
+## Phase 0 — Base (closed Nov 1)
+- Repo, MIT license, `.gitignore`, `.env.example` (MODEL_API_KEY / MODEL_API_BASE_URL / MODEL_NAME).
+- Pre-commit hook (`.githooks/pre-commit`, LF, no BOM): blocks `.env*`, `buffer/`, audio /
+  database / timeline files, secret values from `.env` and key-like lines. Tested with a fake
+  `.env.local` and a fake `api_key = "..."` line: both blocked. `privacy-guard` Action passes.
+- Invoice Portal v1/v2/v3 (FastAPI + SQLite), 30-invoice Excel with hard cases, `demo_reset`.
+- Live API tests: Muse Spark 1.3 text + image OK; SAM 3.1 text prompt IoU 0.98, click-point
+  prompt 0.96, tight UIA-like box 0.95 (a loose ~30 px box only 0.50, so it is not used);
+  Muse Image 1.0 OK (1600x1600 PNG).
+- Session cost meter with the $5 brake and a guard against `-contributor` models.
+
+## Phase 1 — Memory (closed Nov 1)
+- Change-detected screen capture (2 s, 0.5 s for 3 s after a click), window history, system
+  audio with faster-whisper (CUDA int8), 10-minute rotation, excluded apps, `ask`.
+- New: clicks through a low-level *mouse* hook + UIA element under the click; settled text
+  field values via UIA ValuePattern (never passwords); page URL from the address bar.
+- Live checks: 5/5 portal fields logged with exact values (first try missed one field and
+  duplicated another; fixed with a stable field key and logging the first settled value);
+  an excluded "My Bank" page left nothing in the buffer; injected clicks ignored.
+
+## Phase 2 — Learning backwards (closed Nov 1)
+- Demo episode finder, spreadsheet row matcher (Excel COM), Muse Spark plan of fixed blocks,
+  deterministic check that the plan reproduces the demo (max 3 attempts).
+- Real demo by the user (Edge + Excel): episode found, row 1 matched 5/5, plan correct on
+  attempt 1 ($0.015). Real data exposed 3 bugs, all fixed with tests: clicks attributed to
+  the wrong app, the address bar joining the form, bidi marks in Excel's window title.
+- Vague requests: with several candidate episodes Muse Spark reads the whole request (time is
+  only a hint; "the rest" points at spreadsheet data); 5/5 test phrases resolved sensibly.
+
+## Phase 3 — Fabricate, verify, proof included (closed Nov 1)
+- Per-block Playwright code by Muse Spark, code guard, anti-cheat (no data literals, every
+  fill reads `row[...]`), text contract per block, headless runner with events (incl. level).
+- Equivalence verification in a sandbox portal: the demo + 2 extra rows, block stamp and
+  record stamp; expected records for extra rows derived from the demo's relation.
+- Single-block self-repair (max 3), `proof/` per machine, dry proof before each use,
+  summary with confirmation, empty cells reported and skipped, golden rule enforced in code.
+- Results (portal v1, user's own demo):
+  - plain Excel: 30/30 exact (independent DB vs. Excel check);
+  - hard-case Excel: verification 33/33 over 3 rows on attempt 1; 28 sent + row 18 skipped
+    (empty Amount); independent check 29/29 complete rows exact, 0 duplicates;
+  - sabotaged date block: dry proof failed and nothing was sent; repair changed only `b4`.
+- Costs so far for Phases 0-3 live work: about $0.15 of API credits.
+- 76 unit/integration tests passing.

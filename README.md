@@ -91,22 +91,35 @@ Nothing has to be switched on before the task: Pantallita rewinds its memory.
 ## How it works: fabricate and verify (Phase 3)
 
 1. **Code per block.** Muse Spark writes one small Playwright function per block,
-   `def run(page, row, ctx)`, from the plan and the page's accessibility snapshot (text,
-   cheaper than a screenshot). Fields and buttons are found by accessible name.
-2. **Guard.** Generated code is parsed before it runs: exactly one `run` function, no
-   imports, no file/OS access, no dunder or `str.format` escapes; it executes with a
-   minimal set of builtins. The browser is the only thing it can touch.
-3. **Verify with the user's demonstration.** The machine replays the demonstrated row in a
-   *sandbox* copy of the app (same portal version, temporary database) and gets two stamps:
-   - **block stamp**: each `fill_field` must leave in its field exactly what the user typed;
-   - **record stamp**: the stored record must equal the user's own submission, column by column.
+   `def run(page, row, ctx)`, from the plan (each block has a *text contract*, e.g. "Put the
+   Amount column, as a number with 2 decimals, into the field that means the invoice
+   amount") and the page's accessibility snapshot (text, cheaper than a screenshot).
+   Fields and buttons are found by accessible name.
+2. **Guard and anti-cheat.** Generated code is parsed before it runs: exactly one `run`
+   function, no imports, no file/OS access, no dunder or `str.format` escapes, a minimal set
+   of builtins. No data value may be written in the code (any string equal to a cell or a
+   typed value, any number equal to a numeric cell is rejected), and every `fill_field`
+   must read `row[...]`.
+3. **Verify by equivalence.** In a *sandbox* copy of the app (same portal version,
+   temporary database) the machine replays the demonstrated row **and 2 more rows** (chosen
+   to differ in cell types: an amount written as text, a whole number...). Each row gets
+   two stamps:
+   - **block stamp**: each field must hold exactly what the user typed (demo) or what the
+     plan's transforms give (extra rows);
+   - **record stamp**: the stored record must equal the user's own submission (demo), or
+     what the demo *implies* for that row: the relation between sheet cells and stored
+     columns is learned from the demo (e.g. date cell -> ISO date, amount -> number), never
+     written by hand.
 4. **Self-repair.** A block that raises or mismatches is regenerated *on its own* with the
-   error, and the demo is replayed (max 3 rounds). Example from a test run: a date block
-   sabotaged to `%Y-%m-%d` was caught by the block stamp (the portal accepts both formats,
-   so the record alone would not have caught it) and only that block was rewritten.
-5. **Workshop.** A machine that passes is stored in `tools/<name>/` (`plan.json`,
-   `blocks/*.py`, `verification.json`, `runs/*.jsonl` with every row/block event) and runs
-   on the remaining rows headless, with no mouse.
+   error, and the rows are replayed (max 3 rounds).
+5. **Proof included.** A machine that passes (and only then: nothing unverified enters the
+   workshop) is stored in `tools/<name>/`: `plan.json`, `blocks/*.py`, `verification.json`,
+   `proof/` (the demo row, what was typed, and the expected state change) and `runs/*.jsonl`
+   (every row/block event, with the level used). **Before each use** the machine replays
+   its proof dry in a sandbox; if it fails it does not run and goes to repair.
+6. **Summary and confirmation.** Before sending: how many rows, the total of every amount
+   column, and which rows will be skipped. A row with an empty cell is reported and
+   skipped; the run goes on.
 
 ```powershell
 .venv\Scripts\python -m pantallita build            # latest plan -> verified machine -> run the rest
@@ -114,9 +127,13 @@ Nothing has to be switched on before the task: Pantallita rewinds its memory.
 .venv\Scripts\python -m pantallita machine "invoice runner"
 ```
 
-First real run (user's own demo in Edge, portal v1): code for 9 blocks in 8.5 s ($0.009),
-verification passed on attempt 1 (11/11 checks), the other 29 invoices done in 5 s;
-an independent check of the portal database against the Excel file gave **30/30 exact**.
+Real runs on portal v1 (the user's own demo in Edge):
+
+| Run | Result |
+|---|---|
+| Plain Excel | code for 9 blocks in 8.5 s ($0.009); verification 11/11 on attempt 1; 29 rows in 5 s; independent DB vs. Excel check **30/30 exact** |
+| Excel with hard cases (accents/ñ, text amounts, ISO text dates, 1 empty cell) | code in 14 s ($0.015); verification **33/33 checks over 3 rows** on attempt 1; summary "28 rows, total 85,922.76, row 18 skipped: empty Amount"; dry proof 11/11 before use; 28 sent + 1 skipped in 5 s; independent check **29/29 complete rows exact, the empty-cell row not stored, 0 duplicates** |
+| Sabotage: date block changed to `%Y-%m-%d` in the stored machine | dry proof FAIL (10/11), nothing sent; repair rewrote only `b4` ($0.007); 33/33; proof PASS again |
 
 ## Demo environment
 
@@ -124,19 +141,23 @@ A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitio
 are the controlled setting for the fabricate / verify / repair scenes.
 
 ```powershell
-.venv\Scripts\python demo\demo_reset.py                 # empty portal DB, regenerate Excel, clear buffer/
+.venv\Scripts\python demo\demo_reset.py                 # empty portal DB, regenerate Excel, clear buffer/, workshop, plans
 .venv\Scripts\python demo\portal\app.py --version v1    # http://127.0.0.1:8765
-.venv\Scripts\python demo\portal\app.py --version v2    # same portal, amount field moved and renamed
+.venv\Scripts\python demo\portal\app.py --version v2    # amount field moved and renamed (automatic repair)
+.venv\Scripts\python demo\portal\app.py --version v3    # two amount fields (ambiguous: "Show me one")
 ```
 
 The Excel is written to `demo/data/invoices.xlsx`. All names and tax IDs are invented
-(tax IDs start with 99, a prefix no real RUC uses).
+(tax IDs start with 99, a prefix no real RUC uses). It has hard cases on purpose: accents
+and ñ, amounts stored as text with thousands commas, whole amounts, dates as real Excel
+dates and as ISO text, and one empty amount cell.
 
 ## Safety hook
 
 `.venv\Scripts\python scripts\install_hooks.py` enables `.githooks/pre-commit`, which blocks
 commits containing `.env` files, anything under `buffer/`, audio/database/timeline files,
-or any line that contains a secret value from the local `.env`.
+any line that contains a secret value from the local `.env`, and lines that look like an
+API key or token. The `privacy-guard` GitHub Action fails if any such file is tracked.
 
 ## Related work
 
@@ -168,7 +189,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | `ask` over the last 10 minutes, with token optimizations | done |
 | Learning backwards: demo episode finder, spreadsheet row matcher, Muse Spark block plan + check | done |
 | Workshop: per-block code, code guard, headless runner, sandbox equivalence verification, single-block repair | done |
-| Text contract per block, anti-cheat check, 2 extra verification rows, proof included, dry run before use | (planned) |
+| Text contract per block, anti-cheat check, 2 extra verification rows, proof included, dry run before use | done |
 | Invoice Portal v1/v2/v3 + 30-invoice Excel with hard cases + demo reset | done |
 | Pre-commit hook and privacy-guard GitHub Action | done |
 | Launch gesture (lasso, Excel COM selection, SAM crop into cards, throw onto a window) | (planned) |

@@ -80,6 +80,14 @@ class SegmentTests(unittest.TestCase):
         [demo] = seg_mod.find_demos(events + [addr])
         self.assertNotIn("Address and search bar", demo.final_values)
 
+    def test_back_to_back_submissions_are_separate_episodes(self):
+        events = demo_events(self.rows[0]) + demo_events(self.rows[1], offset=40)  # 9 s after the save
+        demos = seg_mod.find_demos(events)
+        self.assertEqual(len(demos), 2)
+        self.assertEqual(demos[0].final_values["Client"], self.rows[1][0])
+        self.assertEqual(demos[1].final_values["Client"], self.rows[0][0])
+        self.assertLess(demos[1].end, demos[0].start)  # no overlap
+
     def test_terminal_where_the_user_asks_is_ignored(self):
         events = demo_events(self.rows[0])
         events += [field(100, "Command", "pantallita do", where=("Terminal", "WindowsTerminal.exe")),

@@ -2,7 +2,8 @@
 
 A demonstration is a *form episode*: text fields filled in one app (and, in a browser, on
 one page: a new URL starts a new episode, so the address bar never joins a form) with no
-more than `max_gap_s` between consecutive edits, plus the clicks around them, ending with the click
+more than `max_gap_s` between consecutive edits, closed by its submit click (so invoices
+typed one after another are separate episodes), plus the clicks around them, ending with the click
 that submits the form (a button clicked within `submit_s` after the last edit). Clicks and
 windows in between (e.g. copying values from Excel) belong to the episode too.
 """
@@ -77,16 +78,26 @@ def find_demos(events: list[dict], max_gap_s: float = 90.0, submit_s: float = 30
     """All form episodes in the events, most recent first."""
     events = sorted((e for e in events if (e.get("process") or "").lower() not in OWN_PROCESSES
                      or e["type"] == "window"), key=lambda e: e["ts"])
-    fields = [e for e in events if e["type"] == "field"]
     runs: list[list[dict]] = []
-    for f in fields:
+    closed = False  # the current run ended with its submit click: the next field starts a new one
+    for e in events:
+        if e["type"] == "click" and runs and not closed:
+            last = runs[-1][-1]
+            if (e["process"] == last["process"] and e.get("element", {}).get("kind") == "button"
+                    and 0 <= e["ts"] - last["ts"] <= submit_s):
+                closed = True
+            continue
+        if e["type"] != "field":
+            continue
         last = runs[-1][-1] if runs else None
-        if (last and f["process"] == last["process"] and f.get("url") == last.get("url")
-                and f["ts"] - last["ts"] <= max_gap_s):
-            runs[-1].append(f)
+        if (last and not closed and e["process"] == last["process"] and e.get("url") == last.get("url")
+                and e["ts"] - last["ts"] <= max_gap_s):
+            runs[-1].append(e)
         else:
-            runs.append([f])
+            runs.append([e])
+            closed = False
     segments = []
+    prev_end = float("-inf")
     for run in runs:
         if len({f["element"]["name"] for f in run}) < min_fields:
             continue
@@ -99,9 +110,11 @@ def find_demos(events: list[dict], max_gap_s: float = 90.0, submit_s: float = 30
                 end = e["ts"]
                 break
         # Back up to the first click of this episode, if it happened just before the first edit.
+        start = max(start, prev_end + 0.001)  # never reach back into the previous episode
         prior = [e for e in events if e["type"] == "click" and start <= e["ts"] <= run[0]["ts"]]
         if prior:
             start = prior[0]["ts"]
+        prev_end = end
         segments.append(Segment(start, end, process, [e for e in events if start <= e["ts"] <= end + 1.0]))
     return sorted(segments, key=lambda s: s.end, reverse=True)
 

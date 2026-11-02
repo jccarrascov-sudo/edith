@@ -160,7 +160,24 @@ Token-efficiency techniques are inspired by GUIPruner, SimpAgent and A11y-Compre
 
 Everything in this repository (all code under `src/` and `tests/`, configuration and docs)
 was written from scratch during the hackathon. Third-party pieces are used only as
-libraries/models, installed from PyPI / Hugging Face and not vendored:
+libraries/models, installed from PyPI / Hugging Face and not vendored.
+
+| Built during the hackathon (all original code) | Status |
+|---|---|
+| Local memory: change-detected capture, mouse-only click log, UIA field values, system audio, 10-min buffer, exclusions | done |
+| `ask` over the last 10 minutes, with token optimizations | done |
+| Learning backwards: demo episode finder, spreadsheet row matcher, Muse Spark block plan + check | done |
+| Workshop: per-block code, code guard, headless runner, sandbox equivalence verification, single-block repair | done |
+| Text contract per block, anti-cheat check, 2 extra verification rows, proof included, dry run before use | (planned) |
+| Invoice Portal v1/v2/v3 + 30-invoice Excel with hard cases + demo reset | done |
+| Pre-commit hook and privacy-guard GitHub Action | done |
+| Launch gesture (lasso, Excel COM selection, SAM crop into cards, throw onto a window) | (planned) |
+| Ghost fan preview with summary and confirm/cancel | (planned) |
+| Mascot overlay and tangible world (machine, cards, stamps, shelf, code-generated sounds) | (planned) |
+| Compile down: network level from the demo browser's requests (allow-listed domains) | (planned) |
+| Repair by intent (UIA/SAM relocation) and "Show me one" | (planned) |
+| Visible fallback mode with SAM highlight | (planned) |
+| Benchmark with real numbers | (planned) |
 
 | Third-party component | Used for | License |
 |---|---|---|
@@ -182,6 +199,9 @@ libraries/models, installed from PyPI / Hugging Face and not vendored:
 | [Playwright](https://github.com/microsoft/playwright-python) (+ Chromium) | Driving the browser in fabricated tools | Apache-2.0 |
 | [meta-sam-parser](https://dev.meta.ai/) (Meta) | Building SAM 3.1 box/point prompts and decoding its masks | SAM License |
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
+| SAM 3.1 via the Meta Model API | Segmenting UI elements (remote API) | Meta terms |
+| Muse Image via the Meta Model API (planned) | Mascot look (optional) | Meta terms |
+| [PySide6](https://doc.qt.io/qtforpython-6/) (Qt for Python) (planned) | Mascot overlay, launch gesture, ghost fan | LGPL-3.0 |
 
 No images, sounds or other assets are included.
 

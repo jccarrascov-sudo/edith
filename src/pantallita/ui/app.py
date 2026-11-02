@@ -10,17 +10,18 @@ import logging
 import sys
 import threading
 
-from PySide6.QtCore import QObject, QPointF, Signal
+from PySide6.QtCore import QObject, QPointF, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QApplication
 
 from ..config import Config
 from ..memory.winutil import window_at
-from . import phrases, winenv
+from . import phrases, repeat, sounds, winenv
 from .flow import LaunchFlow
 from .launch import LaunchHook, Selection, excel_selection
 from .machine import MachineWindow
 from .mascot import Mascot
+from .shelf import Shelf
 from .stage import FanBar, Stage
 
 log = logging.getLogger(__name__)
@@ -104,8 +105,11 @@ class CardCutter(QObject):
             log.exception("card cutting failed (text cards are used instead)")
 
 
-class Companion:
+class Companion(QObject):
+    repetition_found = Signal(str, object, list)
+
     def __init__(self, cfg: Config, app: QApplication):
+        super().__init__()
         self.cfg = cfg
         self.app = app
         self.lang = cfg.ui.get("language", "en")
@@ -119,14 +123,22 @@ class Companion:
         self.flow = LaunchFlow(cfg)
         self.cutter = CardCutter(cfg)
         self.hook = LaunchHook()
+        self.shelf = Shelf()
+        self.asking: tuple[str, object, list] | None = None   # repetition offer on screen
+        self.asked: set[str] = set()
+        self.fan_mode = "send"
         self.wire()
         self.hook.start_thread()
+        self.repeat_timer = QTimer()
+        self.repeat_timer.timeout.connect(self.check_repetition)
+        self.repeat_timer.start(20_000)
         self.mascot.show()
         self.mascot.say(phrases.say("hello", self.lang), 4)
 
     def wire(self) -> None:
         h, f = self.hook, self.flow
         h.lasso_started.connect(self.stage.start_lasso)
+        h.lasso_started.connect(lambda *_: sounds.play("click"))
         h.lasso_moved.connect(self.stage.extend_lasso)
         h.lasso_finished.connect(self.on_lasso)
         h.deck_moved.connect(self.stage.move_deck)
@@ -137,11 +149,14 @@ class Companion:
         f.mood.connect(lambda mood, secs: self.mascot.set_mood(mood or None, secs))
         f.machine.connect(self.machine.show_machine)
         f.event.connect(self.machine.on_event)
+        f.event.connect(lambda e: sounds.play("sparks") if e.get("event") == "block_error" else None)
+        f.stamps.connect(lambda cases: sounds.play("stamp") if cases else None)
         f.stamps.connect(self.machine.set_stamps)
         f.fan.connect(self.on_fan)
         f.finished.connect(self.on_finished)
         f.show_me_one.connect(lambda: self.mascot.say(phrases.say("show_me_one", self.lang), 7))
         self.fanbar.decided.connect(self.on_decided)
+        self.repetition_found.connect(self.offer_repetition)
 
     # --- launch ---------------------------------------------------------------------------------
     def on_lasso(self, points: list) -> None:
@@ -170,6 +185,7 @@ class Companion:
         self.target_rect = winenv.window_rect(hwnd)
         catch_at = QPointF(self.mascot.x - self.stage.geometry().left(), self.mascot.ground_y - 60)
         self.stage.throw_deck(catch_at)
+        sounds.play("whoosh")
         self.mascot.set_mood("catch", 1.5)
         self.flow.start(self.selection, hwnd, process)
 
@@ -179,6 +195,7 @@ class Companion:
 
     # --- ghost fan and result -------------------------------------------------------------------
     def on_fan(self, images: list, summary: dict) -> None:
+        self.fan_mode = "send"
         self.stage.open_fan(images, self.target_rect)
         totals = ", ".join(f"{label}: {value:,.2f}" for label, value in summary.get("totals", {}).items())
         skipped = "".join(f"\nRow {i + 2} will be skipped ({why})." for i, why in summary.get("skipped", []))
@@ -186,6 +203,9 @@ class Companion:
         self.mascot.say(phrases.say("fan", self.lang), 6)
 
     def on_decided(self, ok: bool) -> None:
+        if self.fan_mode == "repeat":
+            self.answer_repetition(ok)
+            return
         self.stage.close_fan()
         self.flow.decide(ok)
 
@@ -199,6 +219,12 @@ class Companion:
         if result.get("cancelled") or result.get("show_me_one"):
             self.machine.close_machine()
             return
+        if result.get("built"):
+            sounds.play("ding")
+            self.mascot.say(f'{result["built"]} is ready! Lasso the rest with Ctrl and throw them on the page.', 8)
+            self.machine.finish(f'{result["built"]}: verified, on the shelf')
+            return
+        sounds.play("ding")
         skipped = phrases.say("skipped", self.lang, n=result["skipped"]) if result.get("skipped") else ""
         self.mascot.say(phrases.say("done", self.lang, ok=result["ok"], skipped=skipped,
                                     saved=phrases.duration(result["saved"], self.lang)), 7)
@@ -208,13 +234,51 @@ class Companion:
 
     # --- the inventor himself -------------------------------------------------------------------
     def on_mascot_clicked(self) -> None:
+        sounds.play("click")
         if self.mascot.in_workshop:
+            self.shelf.hide()
             self.mascot.leave_workshop()
             self.mascot.say(phrases.say("back", self.lang), 2.5)
         else:
             avail = self.app.primaryScreen().availableGeometry()
             self.mascot.go_to_workshop(avail.right() - 60)
             self.mascot.say(phrases.say("workshop", self.lang), 2.5)
+            self.shelf.open()
+
+    # --- repetition detector --------------------------------------------------------------------
+    def check_repetition(self) -> None:
+        if self.asking or self.flow.busy or self.fanbar.isVisible():
+            return
+
+        def work():
+            from ..memory.timeline import Timeline
+            events = Timeline(self.cfg).read()
+            found = repeat.repeated(events, self.asked)
+            if found:
+                self.repetition_found.emit(found[0], found[1], events)
+        threading.Thread(target=work, daemon=True).start()
+
+    def offer_repetition(self, key: str, seg, events: list) -> None:
+        if self.asking or self.flow.busy:
+            return
+        self.asking = (key, seg, events)
+        self.asked.add(key)
+        self.mascot.set_mood("yawn", 3)
+        QTimer.singleShot(3000, lambda: self.mascot.show_sign(phrases.say("repeat", self.lang)))
+        self.fan_mode = "repeat"
+        QTimer.singleShot(3200, lambda: self.fanbar.open(
+            f"<b>{phrases.say('repeat', self.lang)}</b><br>You filled this form "
+            f"{repeat.TIMES} times. I can build a machine for it.", ok="Yes  ⏎", cancel="No  Esc"))
+
+    def answer_repetition(self, yes: bool) -> None:
+        key, seg, events = self.asking
+        self.asking = None
+        self.mascot.show_sign(None)
+        if yes:
+            self.flow.build_from(seg, events)
+        else:
+            repeat.dismiss(key)
+            self.mascot.say(phrases.say("repeat_no", self.lang), 4)
 
     def stop(self) -> None:
         self.hook.stop()

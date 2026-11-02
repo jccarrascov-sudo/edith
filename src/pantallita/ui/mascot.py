@@ -238,6 +238,8 @@ class Mascot(QWidget):
         look = (dx / dist, dy / dist) if state in ("idle", "walk", "sign") else (0.0, 0.2)
         art.draw_mascot(p, W / 2, FEET, SCALE, state, t, look, self.facing,
                         blink=time.monotonic() < self.blink_until)
+        if state == "rewind":
+            art.draw_film(p, W / 2 + 22 * self.facing if self.facing > 0 else W / 2 - 130, FEET - 50, t)
         if self.sign:
             art.draw_sign(p, W / 2, FEET - 112, self.sign)
         if self.bubble:

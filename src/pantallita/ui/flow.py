@@ -93,6 +93,26 @@ class LaunchFlow(QObject):
         self.busy = True
         threading.Thread(target=self._run, args=(selection, hwnd, process), daemon=True).start()
 
+    def build_from(self, seg, events: list[dict]) -> None:
+        """Build (and verify) a machine from an episode in memory, without running it."""
+        if self.busy:
+            return
+        self.busy = True
+
+        def work():
+            try:
+                tool_dir = self._build(seg, events)
+                if tool_dir:
+                    plan, _ = build.load_tool(tool_dir)
+                    self.finished.emit({"built": plan["name"]})
+            except Exception as exc:
+                log.exception("build from memory failed")
+                self.mood.emit("confused", 5)
+                self.finished.emit({"error": f"{type(exc).__name__}: {exc}"})
+            finally:
+                self.busy = False
+        threading.Thread(target=work, daemon=True).start()
+
     def decide(self, confirmed: bool) -> None:
         self._confirmed = confirmed
         self._decision.set()

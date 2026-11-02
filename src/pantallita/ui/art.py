@@ -182,6 +182,33 @@ def draw_mascot(p: QPainter, cx: float, base: float, s: float, state: str, t: fl
         draw_sparks(p, QPointF(cx + 20 * s * facing, base - 72 * s), t, s * 0.7)
 
 
+def draw_film(p: QPainter, x: float, y: float, t: float, s: float = 1.0) -> None:
+    """His memory: a film strip unrolling from (x, y) to the side while he rewinds."""
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    length = (60 + 40 * math.sin(t * 2)) * s
+    frame_w = 16 * s
+    p.setPen(pen(INK, 1.8 * s))
+    p.setBrush(INK)
+    p.drawRoundedRect(QRectF(x, y, length, 20 * s), 3 * s, 3 * s)
+    offset = (t * 40 * s) % frame_w
+    p.setPen(Qt.NoPen)
+    for i in range(int(length // frame_w) + 1):
+        fx = x + i * frame_w - offset
+        if x <= fx <= x + length - frame_w + 2:
+            p.setBrush(TEAL_LIGHT if i % 3 else MUSTARD)
+            p.drawRoundedRect(QRectF(fx + 3 * s, y + 5 * s, frame_w - 6 * s, 10 * s), 1.5 * s, 1.5 * s)
+            p.setBrush(CREAM)
+            p.drawRect(QRectF(fx + 5 * s, y + 1.5 * s, 3 * s, 2 * s))
+            p.drawRect(QRectF(fx + 5 * s, y + 16.5 * s, 3 * s, 2 * s))
+    p.setPen(pen(INK, 1.8 * s))
+    p.setBrush(INK)
+    p.drawEllipse(QPointF(x, y + 10 * s), 9 * s, 9 * s)  # the reel
+    p.setBrush(CREAM)
+    p.drawEllipse(QPointF(x, y + 10 * s), 3 * s, 3 * s)
+    p.restore()
+
+
 def draw_sparks(p: QPainter, at: QPointF, t: float, s: float = 1.0) -> None:
     p.save()
     p.setRenderHint(QPainter.Antialiasing)

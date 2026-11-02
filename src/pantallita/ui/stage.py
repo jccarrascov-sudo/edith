@@ -204,9 +204,9 @@ class FanBar(QWidget):
             "#send { background: #2a9d8f; color: #fffdf8; } #cancel { background: #fff6e5; color: #24303d; }")
         self.label = QLabel()
         self.label.setWordWrap(True)
-        send = QPushButton("Send  ⏎")
+        send = self.send_button = QPushButton("Send  ⏎")
         send.setObjectName("send")
-        cancel = QPushButton("Cancel  Esc")
+        cancel = self.cancel_button = QPushButton("Cancel  Esc")
         cancel.setObjectName("cancel")
         send.clicked.connect(lambda: self.finish(True))
         cancel.clicked.connect(lambda: self.finish(False))
@@ -223,8 +223,10 @@ class FanBar(QWidget):
         outer.addWidget(box)
         self.resize(460, 130)
 
-    def open(self, text: str) -> None:
+    def open(self, text: str, ok: str = "Send  ⏎", cancel: str = "Cancel  Esc") -> None:
         self.label.setText(text)
+        self.send_button.setText(ok)
+        self.cancel_button.setText(cancel)
         avail = QGuiApplication.primaryScreen().availableGeometry()
         self.move(avail.center().x() - self.width() // 2, avail.bottom() - self.height() - 24)
         self.show()

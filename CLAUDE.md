@@ -1,146 +1,174 @@
 # CLAUDE.md — Pantallita
 
-> "Your screen has an inventor."
+> "Every AI agent starts with a prompt. Pantallita doesn't have one. Do it once. Then just throw the rest."
+> "Pantallita never does the same work twice."
 
-## What it is
-A tiny inventor character that lives on the screen. It keeps a local memory of the last
-10 minutes (screen, clicks, UI Automation field values, active window, system audio).
-When the user does a repetitive task once (e.g. copy 1 invoice from Excel into a web portal)
-and says "do the rest", it:
-1. Finds the demonstration in its memory (retroactive learning — nothing to activate before).
-2. Understands the intent and splits it into STEPS (blocks).
-3. Fabricates a tool: a Python + Playwright program that does the task directly with the
-   data, without moving the mouse.
-4. Verifies the tool using the user's demonstration as the test: runs it on the same case
-   and compares field by field (SQLite). On mismatch it self-corrects (max 3 attempts).
-5. Stores the machine in its "workshop"; next time it is one click.
-6. If the portal changes and the tool breaks, the user shows the case once and it repairs
-   ONLY the broken block.
-7. Fallback: if something cannot be done by code, it acts visibly on screen (walks to the
-   element, highlights it with SAM, clicks).
-It can also answer questions about the last 10 minutes of screen/audio (`ask`).
+Summary of the user's master prompt (Nov 1, 2026). It replaces all earlier instructions.
 
-The core is fabricate → verify → repair tools. It is NOT an image analyzer nor basic RAG.
+## Product (the video revolves around this; no command is typed in the video)
+A tiny inventor living on the screen, with a local memory of the last 10 minutes.
+1. The user does ONE task by hand (e.g. 1 invoice from Excel into a web portal), recording nothing on purpose.
+2. LAUNCH: holding a modifier key, the user lassoes the remaining Excel rows; they become a
+   deck of cards stuck to the cursor; the user throws it onto the portal window.
+3. The inventor catches the cards. Pantallita searches its memory for when data from that
+   source ended up in that destination (retroactive learning), understands the intent,
+   splits it into blocks and FABRICATES a machine.
+4. VERIFY BY EQUIVALENCE: run the machine on the same case the user did, on a temporary DB;
+   the state change must equal the demo's. Otherwise repair only the failing block (max 3).
+5. GHOST FAN: before submitting, show the filled forms translucently over the portal plus a
+   summary (count and total amount). Enter confirms, Esc cancels and the cards fly back.
+6. COMPILE DOWN: use the lowest level that passes verification: network (replay the form's
+   request) > page (Playwright by labels) > screen (visible fallback).
+7. PROOF INCLUDED: every machine stores the demo and the expected state change; before each
+   use it runs that proof dry. If it fails it does not run and goes to repair.
+8. REPAIR BY INTENT: each block has a text contract ("put the Amount column in the field
+   that means amount"). If the portal changes, relocate the field alone (UIA/SAM) and
+   re-verify; only if ambiguous or failing, the inventor says "Show me one".
+9. Launch with no prior demo → "Show me one", the user does one, the next launch works.
+Extra (cuttable): ask what happened on screen/audio in the last 10 min. Text "do the rest" is only a fallback.
 
-**Tangible visuals**: a tool is a little machine made of blocks (each block = one real
-program step; clicking a block shows its code); each data row is a card entering the
-machine; memory is a film strip; verification is two overlapping stamps whose matching
-fields light up; a failure is a block throwing sparks; repair replaces only that block.
+## Tangible world & mascot
 100 % original flat style (simple shapes, few colors, soft edges). NEVER copy designs or
-characters from any series, film or brand.
+characters from series, films or brands. Memory = film strip; row = card; machine = blocks
+(click a block → its real code); compile level = the machine's "engine" (visible when it
+switches to a faster one); verification = two overlapping stamps, matching fields light up;
+failure = block throwing sparks; repair = replace only that block.
+Mascot: hates seeing the user bored; proud of his machines, humble when failing, never
+interrupts to show off. COMPANION mode: transparent always-on-top window, click-through
+except when touched; walks on the taskbar and top edges of windows (Win32), jumps between
+windows, eyes follow the mouse, moves away from where the user works, hides in fullscreen /
+video calls, one click sends him to the workshop. States: walking, catching cards, building,
+verifying, confused (scratches head). Repetition detector: same pattern 3 times → yawns and
+raises "Want me to do it?"; if told no, doesn't insist. Workshop: shelf of machines (invented,
+editable names) with time saved; total counter. Short warm phrases; English (video) and
+neutral Spanish, configurable. Sounds generated by code.
 
 ## Hackathon rules (breaking them = disqualification)
 Meta Global AI Developer Hackathon 2026, Indie Developer track, theme "Push the Frontier".
 **Deadline: Nov 4, 2026, 9 PM US Eastern (8 PM Lima).** A 3-minute video is mandatory.
-- All code must be new, written since Oct 26, 2026. Never copy code from existing projects.
-- Public repo (github.com/jccarrascov-sudo/pantallita). NEVER commit `.env`, keys, or
-  anything under `buffer/`. A pre-commit hook (`hooks/pre-commit`) blocks them; keep it installed.
-- README must keep an up-to-date "Built during the hackathon" vs. third-party table:
-  update it whenever a dependency is added.
-- No asset (image, sound, font) without a license. The mascot is drawn by code
-  (QPainter/vectors) or generated with Muse Image; sounds are synthesized by code.
+- All code new, written since Oct 26, 2026. Never copy existing code.
+- PUBLIC repo (github.com/jccarrascov-sudo/pantallita). Never commit .env, keys or buffer/.
+- README "Built during the hackathon" vs. third-party table, always up to date.
+- No asset without a license: everything drawn by code or made with Muse Image.
 
-## Meta models
-- **Muse Spark 1.3** (`muse-spark-1.3`) via the Meta Model API (OpenAI-compatible,
-  `https://api.meta.ai/v1`, key in `.env` as `META_API_KEY`). NEVER use any `-contributor` variant.
-  Reasoning tokens count against `max_tokens`; set `reasoning_effort`.
-  Images: Chat Completions `{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}` (tested).
-  Token counter: `POST /v1/responses/input_tokens` (tested).
-- **SAM 3.1** (`sam-3.1`) via `POST /v1/responses` (stream), text or box/point prompts;
-  output is special-token text `<|box;x1=..;y1=..;x2=..;y2=..;w=..;h=..|><|mask;...|>`;
-  masks decoded with `meta-sam-parser`. Used to segment the exact UI element.
-- **Muse Image** (`muse-image-1.0`) via `/v1/images/generations`, $0.01/image, no
-  transparent background. Optional, for the mascot's look, at the end.
-Verify endpoints in dev.meta.ai docs and test with a minimal script before building on them.
+## Meta models & budget
+- Muse Spark 1.3 via the Meta Model API (OpenAI-compatible). Env vars: MODEL_API_KEY,
+  MODEL_API_BASE_URL, MODEL_NAME=muse-spark-1.3. Never read or print the key's value.
+  NEVER any "-contributor" variant. Reasoning tokens count against max_tokens.
+- SAM 3 / 3.1 (`sam-3.1`, `/v1/responses`, box/point prompts, `meta-sam-parser`): crop the
+  launch lasso, locate elements in the demo and in repair, highlight in the fallback.
+  Point prompt IoU 0.96, tight box 0.95; a loose box (~30 px margin) only 0.50.
+- Muse Image (`muse-image-1.0`, $0.01/image): mascot look (optional, at the end).
+- Verify endpoints at dev.meta.ai with minimal scripts before building; if something is not
+  available, tell the user before looking for alternatives.
+- Session cost meter ($1.25/M in, $0.15/M cached in, $4.25/M out) and a $5 session brake (configurable).
 
-## Budget
-$150 in credits. Session cost counter (Muse Spark 1.3: $1.25/M input, $0.15/M cached
-input, $4.25/M output) and a brake that stops calls when a session exceeds $5 unless
-raised in config.
+## Privacy (mandatory)
+- NEVER record the keyboard, in any mode.
+- Recorded: screenshots, click position + element, active window, field values via UIA
+  ValuePattern when they change; IsPassword = true is never read.
+- Launch data is read from the real selection (Excel COM or UIA), never from the image.
+- Network: only requests of the demo browser (Chromium opened by Pantallita via
+  Playwright/CDP), only for allow-listed domains (default: the local portal). The network
+  level is only used on allowed domains.
+- Everything local in buffer/, deleted after 10 min. Excluded apps never captured. Pause always visible.
 
-## Privacy (by design, not optional)
-- NEVER record the keyboard. No keylogger in any mode.
-- Recorded: screenshots, click position + target element, active window, and text field
-  values read via UI Automation (ValuePattern) when they change. Elements with
-  IsPassword = true are never read.
-- Everything stays local in `buffer/` and is deleted after 10 minutes.
-- Excluded apps (password managers, banks): nothing is captured while they are active
-  (screen, titles and audio).
-- Pause always visible.
-
-## Environment
-Windows 11, PowerShell, Python 3.12 in `.venv` (use `.venv\Scripts\python`).
-RTX 5050 8 GB VRAM, 16 GB RAM. Must coexist with other apps: max ~1.5 GB VRAM, low idle
-CPU (mascot < 2 % CPU). The user NEVER edits files by hand: Claude creates, edits and
-installs everything. Exception: secrets — the user writes `.env` themselves; never print
-or log the key.
-
-## Style
-Code, comments, README and commits in English. Talk to the user in Spanish.
-Small descriptive commits whenever something works. Git identity:
+## Environment & style
+Windows 11, PowerShell, Python 3.12 in .venv (`.venv\Scripts\python`). RTX 5050 8 GB VRAM,
+16 GB RAM. Max ~1.5 GB VRAM; mascot < 2 % CPU idle; animations at 30 fps.
+The user NEVER edits files by hand: Claude creates, edits and installs everything.
+Code, comments, README, docs and commits in English; talk to the user in Spanish.
+Small commits, push each time something works. Git identity:
 JUAN CARLOS CARRASCO VELAPATIÑO <230002519+jccarrascov-sudo@users.noreply.github.com>.
 
-## Mascot (personality)
-A tiny inventor who hates seeing the user bored. Proud of his machines, humble when he
-fails, never interrupts to show off. Default mode COMPANION: transparent always-on-top
-window, click-through except when touched. Walks on the taskbar and on top edges of
-windows (Win32 positions), jumps between windows; eyes follow the mouse when idle; never
-covers where the user works; goes to the workshop alone in fullscreen/video calls; one
-click sends him to the workshop. States: walking, rewinding (unrolls film strip),
-building (assembles blocks), verifying (stamps), acting (walks to highlighted element),
-confused (scratches head, sparks on the block). Repetition detector: same pattern 3 times
-→ yawns, drums fingers, raises a "Want me to do it?" sign; if told no, doesn't insist for
-that task. Workshop: shelf on the taskbar with the machines, each with an invented
-(editable) name and a time-saved label; total time-returned counter. Short warm phrases
-with a touch of humor; language configurable: English (video) and neutral Spanish
-without regional slang.
-
 ## Demo environment
-Local "Invoice Portal" (FastAPI + simple HTML, `demo/portal/app.py`):
-v1 form (client, tax ID, date, amount, description) saving to SQLite; v2 = same portal
-with the amount field moved and renamed (repair scene), chosen with `--version`.
-Excel with 30 fictitious invoices (`demo/make_invoices.py`). `demo/demo_reset.py` resets
-portal DB, Excel and buffer. Verification compares what SQLite stored after the user's
-demo vs. after running the tool, field by field.
+Local "Invoice Portal" (FastAPI + HTML + SQLite, `demo/portal/app.py`, own save endpoint):
+v1 client, tax ID, date, amount, description; v2 amount moved and renamed (automatic
+repair); v3 two amount fields (ambiguity: must ask "Show me one"). Excel with 30 fictitious
+invoices with hard cases: accents and ñ, amounts with commas and decimals, dates in 2
+formats, 1 empty cell that is reported without breaking. `demo_reset` resets portal, DB,
+buffer and workshop.
 
-## Tool architecture
-A tool is NOT a monolithic script: it is a JSON plan of steps, each with a fixed block
-type (read_row, fill_field, click, wait, save, verify) and its own Playwright snippet, so
-each block is drawn, verified and repaired separately. The runner executes the plan on
-every row and emits events (row in, block done, row out, error in block X) for the UI.
+## Machine architecture
+JSON plan of fixed block types (read_row, fill_field, click, wait, save, verify), each with
+a text contract and its code per level (network/page). The runner emits events (row in,
+block done, row out, error in block X, level used) that the UI animates.
+Anti-cheat: no data value hard-coded; every value comes from a column. Besides the demo
+case, verify 2 more rows before processing all. Store in tools/<name>/: plan.json, blocks,
+proof/ (demo + expected state change). Golden rule: NOTHING enters the workshop without
+passing its equivalence verification.
+
+## Token efficiency (cite in docs/ARCHITECTURE.md "Token efficiency")
+Text before images (compressed UIA tree; A11y-Compressor 2026); crops of the relevant area
+(SimpAgent, ICCV 2025); current + previous screenshot, earlier steps as text (UI-TARS 2025),
+older screenshots at uniformly decreasing resolution (GUIPruner 2026), history as diffs;
+"ask" frames by relevance + temporal coverage, max 8 (Adaptive Keyframe Sampling, CVPR 2025);
+prompt caching (fixed prefix first, variable part last; verify how it activates). Log tokens
+before/after each optimization.
+
+## Repo & presentation
+.gitignore (.env, .venv/, __pycache__/, buffer/, *.wav, *.sqlite, *.db, tools/* except
+tools/.gitkeep); .env.example with the 3 vars (empty key); pre-commit hook in
+.githooks/pre-commit (UTF-8 without BOM, LF, core.hooksPath) blocking .env, buffer/,
+.wav/.sqlite/.db and key-like lines; GitHub Action privacy-guard failing on tracked .env or
+buffer/. README sections: tagline + second sentence; "Demo video: coming Nov 4"; The
+problem; What Pantallita does; Technology you can see; The companion; Why it's new; Meta
+models; Privacy by design (free hackathon credits; production would use the standard
+endpoint); Results ("—" until real data; NEVER invent numbers); Scope and limitations;
+Related work (GPA Salesforce 2026, Work2Skill 2026, ShowUI-Aloha NUS 2026, AppAgentX
+Westlake 2025, self-healing selectors in testing); Built during the hackathon ("(planned)"
+for what doesn't exist yet); Architecture (Mermaid); Roadmap; Setup; License MIT.
+Also docs/ARCHITECTURE.md, docs/PRIVACY.md, BUILD_LOG.md (update when closing each phase),
+SUBMISSION_CHECKLIST.md, LICENSE MIT (user's git name, 2026).
+
+## Phases (run Get-Date at the start of each and report time left; if a phase slips more
+than half a day, warn and apply the cuts)
+0-2. Done (memory, learn backwards). Only the small (B) adjustments.
+3. Fabricate, verify, proof included (Nov 1): page-level code per block, equivalence on a
+   temp DB, anti-cheat, 2 extra rows, per-block repair (max 3), text contract per block,
+   proof/, summary with confirmation. Accept: 30/30 on v1, empty cell reported without
+   breaking, clear verification log, dry proof runs before each use.
+4. Launch, ghost fan, mascot (Nov 3): lasso with modifier, Excel COM data, SAM crop into
+   cards, throw onto the target window (Win32), find demo/machine for that pair, "Show me
+   one" if none, ghost fan, mascot and tangible world. Accept: whole flow without typing,
+   understandable without the terminal; mascot < 2 % CPU idle.
+5. Compile down & repair (Nov 3): network log of the demo browser (allowed domains only);
+   network level verified like the others; engine changes in the UI. Repair by intent: v2
+   repairs itself; v3 asks "Show me one". Visible fallback with SAM and stop button (if time).
+   Accept: v2 back to 30/30 changing one block unaided; v3 asks for a demo then works;
+   network level passes verification.
+6. Results & delivery (Nov 4, done before 3 PM Lima): benchmark with REAL numbers on 30
+   invoices: (a) click-by-click agent, (b) Muse Spark writes a script from a text
+   description only, (c) page-level machine, (d) network-level machine, (e) after v2 +
+   repair. Correct/30, time, cost, tokens per invoice. Full README; remove "(planned)";
+   go through SUBMISSION_CHECKLIST.md.
+Cuts if late, in order: (1) section 14 except README Roadmap, (2) audio + ask, (3) Muse
+Image, (4) extra mascot behaviors, (5) visible fallback, (6) automatic repair (keep "Show
+me one"), (7) network level. NEVER cut: core (learn → fabricate → verify), proof included,
+launch with ghost fan.
+
+## Growing workshop (only after Phase 5)
+The model is not retrained; the workshop of verified machines grows. (1) Launch without a
+demo + fallback available → offer to try as a visible agent; if confirmed in the ghost fan,
+compile that run into a machine with proof. (2) Reuse verified equivalent blocks (type +
+contract) from tools/, log tokens saved. (3) Never learn from unconfirmed/unverified runs.
+(4) README Roadmap: learning from ghost-fan corrections, long-term text-only pattern memory
+under user control, repair library, offline version with Muse Glimmer. If no time: only (4).
 
 ## Code layout
 ```
 src/pantallita/
-  memory/   capture.py actions.py audio.py timeline.py winutil.py uia.py   (Phase 1, done)
-  brain/    ask.py tokens.py client.py (costs + brake)            (ask working)
-  learn/    segment.py source.py plan.py cli.py                  (Phase 2, done)
-  workshop/ codegen.py runner.py sandbox.py build.py cli.py       (Phase 3, done)
+  memory/   capture.py actions.py audio.py timeline.py winutil.py uia.py   (Phase 1)
+  brain/    ask.py tokens.py client.py (costs + brake)
+  learn/    segment.py source.py plan.py cli.py                  (Phase 2)
+  workshop/ codegen.py runner.py sandbox.py build.py cli.py       (Phase 3)
   vision/   sam.py
-  ui/ detect/                                                     (later phases)
 demo/       portal/app.py make_invoices.py demo_reset.py
 scripts/    test_api.py measure_tokens.py install_hooks.py
 hooks/      pre-commit
-docs/       ARCHITECTURE.md (incl. "Token efficiency" with measured numbers)
+docs/       ARCHITECTURE.md
 ```
 
-## Phases (each: test acceptance criteria yourself, report real results incl. failures,
-commit, wait for the user's OK before the next)
-0. Base: CLAUDE.md, pre-commit hook, portal v1/v2, 30-invoice Excel, demo_reset, API
-   test script (Spark+image, SAM, Muse Image).
-1. Memory: change-detected capture (2 s idle, 0.5 s around clicks), timeline with frames,
-   clicks (+ UIA element), UIA field value changes (no passwords), active window; audio;
-   10-min rotation; exclusions; `ask`. Static screen ≤ 1 frame / 30 s; never keyboard data.
-2. Learn backwards: "do the rest" finds the demo segment (confirm its time with the user);
-   Muse Spark → intent + JSON block plan mapping portal fields to Excel columns.
-3. Fabricate & verify: Playwright code per block; replay the same invoice on a temp DB and
-   compare; regenerate only the failing block (max 3); save to tools/<name>/; run the
-   other 29. Target 30/30 on v1 without moving the mouse.
-4. Mascot & tangible world (overlay, states, machine, cards, stamps, shelf, code-generated
-   sounds, repetition sign). Mascot idle CPU < 2 %.
-5. Repair & fallback: v2 breaks the amount block → sparks → user shows once → repair only
-   that block → back to 30/30. Visible fallback mode with SAM highlight, ≥ 5 invoices, stop button.
-6. Results: benchmark (fallback vs. tool, v1 and v2 after repair) with REAL numbers;
-   final README.
-If time runs out, cut in this order: Muse Image → audio/ask → visible fallback (keep SAM
-highlight in verification) → reduced benchmark. NEVER cut learn → fabricate → verify → repair.
+## Working agreement
+Each phase: test the acceptance criteria yourself, report REAL results (incl. failures),
+update BUILD_LOG.md and README, commit + push, wait for the user's OK before the next.

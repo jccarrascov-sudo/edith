@@ -92,6 +92,36 @@ def run_rows(plan: dict, code: dict[str, str], rows: list[tuple[int, dict]], url
     return results
 
 
+def preview_rows(plan: dict, code: dict[str, str], rows: list[tuple[int, dict]], url: str,
+                 timeout_ms: int = 8000) -> list[bytes]:
+    """The ghost fan: fill the form for each row WITHOUT submitting (blocks before the first
+    save/click) and take a picture of it. Meant for a sandbox URL."""
+    from playwright.sync_api import sync_playwright
+
+    blocks = compile_blocks(plan, code)
+    before_submit = []
+    for b in plan["blocks"]:
+        if b["type"] in ("save", "click"):
+            break
+        before_submit.append(b)
+    images = []
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(viewport={"width": 760, "height": 720})
+            page.set_default_timeout(timeout_ms)
+            for _index, row in rows:
+                page.goto(url)
+                ctx: dict = {"filled": {}}
+                for b in before_submit:
+                    blocks[b["id"]](page, row, ctx)
+                form = page.locator("form").first
+                images.append(form.screenshot() if form.count() else page.screenshot())
+        finally:
+            browser.close()
+    return images
+
+
 def empty_cells(plan: dict, row: dict) -> list[str]:
     cols = [b["column"] for b in plan["blocks"] if b["type"] == "fill_field"]
     return [c for c in cols if row.get(c) is None or (isinstance(row.get(c), str) and not row[c].strip())]

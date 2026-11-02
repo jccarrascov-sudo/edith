@@ -328,8 +328,14 @@ def summary(plan: dict, rows: list[tuple[int, dict]]) -> dict:
 
 def run_tool(tool_dir: Path, skip_demo_row: bool = True, log_fn=print, on_event=None) -> list[runner.RowResult]:
     """Run a stored machine on the rows of its sheet (by default all but the demonstrated one)."""
+    plan, _code = load_tool(tool_dir)
+    return run_rows_logged(tool_dir, rows_to_run(plan, skip_demo_row), log_fn=log_fn, on_event=on_event)
+
+
+def run_rows_logged(tool_dir: Path, rows: list[tuple[int, dict]], log_fn=print, on_event=None) -> list[runner.RowResult]:
+    """Run a stored machine on given rows against the real target, logging every event."""
     plan, code = load_tool(tool_dir)
-    rows = rows_to_run(plan, skip_demo_row)
+    prepare(plan)
     runs = tool_dir / "runs"
     runs.mkdir(exist_ok=True)
     log_path = runs / f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}.jsonl"

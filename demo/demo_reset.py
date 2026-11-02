@@ -3,9 +3,10 @@
 - Empties the portal database (also works while the portal is running).
 - Regenerates the 30-invoice Excel file.
 - Clears Pantallita's memory (buffer/: frames, audio, timeline).
-- With --tools, also removes the machines in the workshop (tools/*, keeping tools/.gitkeep).
+- Empties the workshop (tools/*, keeping tools/.gitkeep) and the learned plans (state/plans),
+  unless --keep-tools is given.
 
-Run: .venv\\Scripts\\python demo\\demo_reset.py [--tools]
+Run: .venv\\Scripts\\python demo\\demo_reset.py [--keep-tools]
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ def clear_dir(folder: Path, keep: set[str] = frozenset()) -> int:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--tools", action="store_true", help="also clear the workshop (tools/)")
+    parser.add_argument("--keep-tools", action="store_true", help="keep the workshop (tools/) and plans")
     args = parser.parse_args()
 
     reset_db(DEFAULT_DB)
@@ -55,8 +56,9 @@ def main() -> None:
     for name in ("timeline.jsonl", "timeline.jsonl.tmp"):
         (buffer / name).unlink(missing_ok=True)
     print(f"buffer cleared: {n} files")
-    if args.tools:
-        print(f"workshop cleared: {clear_dir(ROOT / 'tools', keep={'.gitkeep'})} machines")
+    if not args.keep_tools:
+        print(f"workshop cleared: {clear_dir(ROOT / 'tools', keep={'.gitkeep'})} machines, "
+              f"{clear_dir(ROOT / 'state' / 'plans')} plans")
 
 
 if __name__ == "__main__":

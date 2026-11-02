@@ -23,6 +23,7 @@ SCALE = 1.0
 FEET = H - 6
 WALK_SPEED = 70.0        # px / s
 ACTIVE_MS, IDLE_MS = 33, 125
+EDGE = 135               # keep this far from the screen edges so his speech bubble fits
 
 
 class Mascot(QWidget):
@@ -78,7 +79,7 @@ class Mascot(QWidget):
         full, avail, _ = self.screen_geo()
         self.ground_y = self.taskbar_y()
         if initial:
-            self.x = self.target_x = avail.right() - 260
+            self.x = self.target_x = avail.right() - 300
         self.move_window()
 
     def move_window(self) -> None:
@@ -104,7 +105,7 @@ class Mascot(QWidget):
 
     def walk_to(self, x: float) -> None:
         _full, avail, _ = self.screen_geo()
-        self.target_x = max(avail.left() + 40, min(avail.right() - 40, x))
+        self.target_x = max(avail.left() + EDGE, min(avail.right() - EDGE, x))
 
     def go_to_workshop(self, shelf_x: float) -> None:
         self.in_workshop = True
@@ -211,6 +212,10 @@ class Mascot(QWidget):
             ledges = self.find_ledges()
             if ledges:
                 hwnd, y, l, r = random.choice(ledges[:4])
+                _full, avail, _ = self.screen_geo()
+                l, r = max(l, avail.left() + EDGE), min(r, avail.right() - EDGE)
+                if r - l < 60:
+                    return
                 self.ledge = (hwnd, y, l, r)
                 self.ledge_until = now + random.uniform(10, 25)
                 self.start_jump(max(l, min(r, self.x)), y)

@@ -95,6 +95,7 @@ def main(argv: list[str] | None = None) -> None:
     p_build.add_argument("--yes", action="store_true", help="run it on the other rows without asking")
     p_machine = sub.add_parser("machine", help="run a machine from the workshop (no name: list them)")
     p_machine.add_argument("name", nargs="?")
+    p_machine.add_argument("--yes", action="store_true", help="send without asking")
     p_cost = sub.add_parser("cost", help="show the API cost of the current session")
     p_cost.add_argument("--new", action="store_true", help="start a new cost session")
     args = parser.parse_args(argv)
@@ -137,7 +138,8 @@ def main(argv: list[str] | None = None) -> None:
             list_tools()
         else:
             tool = find_tool(args.name)
-            sys.exit(run_machine(tool) if tool else print(f"No machine called {args.name!r}.") or 1)
+            sys.exit(run_machine(cfg, tool, confirm=not args.yes) if tool
+                     else print(f"No machine called {args.name!r}.") or 1)
     elif args.command == "status":
         Timeline(cfg).prune()
         from .status import status

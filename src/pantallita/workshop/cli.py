@@ -9,11 +9,28 @@ from pathlib import Path
 from ..config import Config
 from ..learn.plan import PLANS_DIR
 from . import build
+from . import proof as proof_mod
+
+YES = ("", "y", "yes", "s", "si", "sí")
+
+
+def yes(answer: str) -> bool:
+    # Piped input on Windows may start with a BOM.
+    return answer.replace("\ufeff", "").strip().lower() in YES
 
 
 def latest_plan() -> Path | None:
     plans = sorted(PLANS_DIR.glob("plan-*.json"))
     return plans[-1] if plans else None
+
+
+def show_stamps(v: build.Verification) -> None:
+    """The two overlapping stamps, as text: one mark per field and stored column, per row."""
+    last = v.stamps[-1] if v.stamps else {}
+    for cs in last.get("cases", []):
+        marks = "".join("✓" if c["match"] else "✗" for c in cs["fields"])
+        record = "".join("✓" if c["match"] else "✗" for c in cs["record"])
+        print(f"    {cs['case']:<14} fields {marks}  record {record}")
 
 
 def build_and_run(cfg: Config, plan_path: Path | None = None, confirm: bool = True) -> int:
@@ -28,30 +45,65 @@ def build_and_run(cfg: Config, plan_path: Path | None = None, confirm: bool = Tr
     except (build.BuildError, build.sandbox.NoSandbox) as exc:
         print(f"Hmm. {exc}")
         return 1
+    show_stamps(v)
     if not v.ok:
         print(f"I couldn't make it match your demo after {v.attempts} tries. Sparks everywhere... sorry!")
         return 1
     tool_dir = build.save_tool(plan, code, v)
     repaired = f", fixed {', '.join(v.repaired)} on the way" if v.repaired else ""
-    print(f'"{plan["name"]}" passed your own demo on attempt {v.attempts}{repaired}. Saved in {tool_dir}')
-    rest = plan["source"]["rows"] - 1
-    if confirm and input(f"Run it on the other {rest} rows? [Y/n] ").strip().lower() not in ("", "y", "yes", "s", "si", "sí"):
-        print("Okay, it's on the shelf whenever you need it.")
-        return 0
-    return run_machine(tool_dir)
+    print(f'"{plan["name"]}" passed on attempt {v.attempts}{repaired}. On the shelf: {tool_dir}')
+    return run_machine(cfg, tool_dir, confirm=confirm, proof_checked=True)
 
 
-def run_machine(tool_dir: Path) -> int:
+def repair_from_proof(cfg: Config, tool_dir: Path) -> bool:
+    """The proof failed: re-verify against the stored demo and regenerate only broken blocks."""
+    plan, code = build.load_tool(tool_dir)
+    _demo, expected = proof_mod.load(tool_dir)
+    print("  repairing against your demo...")
+    try:
+        code, v = build.fabricate(cfg, plan, code=code, user_record=dict(expected["record"]))
+    except (build.BuildError, build.sandbox.NoSandbox) as exc:
+        print(f"  Hmm. {exc}")
+        return False
+    show_stamps(v)
+    if not v.ok:
+        return False
+    build.save_tool(plan, code, v)
+    print(f"  repaired: {', '.join(v.repaired) or 'nothing to change'}")
+    return True
+
+
+def run_machine(cfg: Config, tool_dir: Path, confirm: bool = True, proof_checked: bool = False) -> int:
     plan, _ = build.load_tool(tool_dir)
+    if not proof_checked:
+        print(f'Checking "{plan["name"]}" against its proof first...')
+        ok, _problems, _stamp = build.dry_run(tool_dir)
+        if not ok:
+            print("The proof failed, so I won't run it like this.")
+            if not repair_from_proof(cfg, tool_dir):
+                print("I couldn't repair it on my own. Show me one and I'll rebuild it.")
+                return 1
+            plan, _ = build.load_tool(tool_dir)
+    rows = build.rows_to_run(plan)
+    s = build.summary(plan, rows)
+    totals = ", ".join(f"{label} total {value:,.2f}" for label, value in s["totals"].items())
+    print(f"Ready to send {s['send']} rows" + (f" ({totals})" if totals else "") + ".")
+    for i, reason in s["skipped"]:
+        print(f"  row {i + 1} will be skipped: {reason}")
+    if confirm and not yes(input("Send them? [Y/n] ")):
+        print("Okay, nothing sent. The machine is on the shelf.")
+        return 0
     print(f'Running "{plan["name"]}"...')
     t0 = time.monotonic()
     results = build.run_tool(tool_dir)
     ok = sum(r.ok for r in results)
+    skipped = sum(bool(r.skipped) for r in results)
+    failed = len(results) - ok - skipped
     seconds = time.monotonic() - t0
-    by_hand = plan.get("seconds_per_row_by_hand", 0) * len(results)
-    print(f"{ok}/{len(results)} rows done in {seconds:.0f}s "
-          f"(by hand: ~{by_hand / 60:.0f} min). " + ("All good!" if ok == len(results) else "Some rows failed."))
-    return 0 if ok == len(results) else 1
+    by_hand = plan.get("seconds_per_row_by_hand", 0) * ok
+    print(f"{ok} sent, {skipped} skipped (reported), {failed} failed, in {seconds:.0f}s "
+          f"(by hand: ~{by_hand / 60:.0f} min).")
+    return 0 if failed == 0 else 1
 
 
 def find_tool(name: str) -> Path | None:
@@ -70,4 +122,5 @@ def list_tools() -> None:
         print("The shelf is empty.")
     for d in dirs:
         plan = json.loads((d / "plan.json").read_text(encoding="utf-8"))
-        print(f'  {d.name:<24} "{plan["name"]}": {plan["intent"]}')
+        has_proof = "proof" if (d / "proof" / "expected.json").exists() else "NO proof"
+        print(f'  {d.name:<24} "{plan["name"]}" ({has_proof}): {plan["intent"]}')

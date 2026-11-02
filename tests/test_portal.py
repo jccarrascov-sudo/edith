@@ -1,4 +1,4 @@
-"""Invoice Portal v1/v2 over real HTTP (uvicorn in a thread, temporary databases)."""
+"""Invoice Portal v1/v2/v3 over real HTTP (uvicorn in a thread, temporary databases)."""
 
 from __future__ import annotations
 
@@ -68,11 +68,13 @@ class PortalTests(unittest.TestCase):
         cls.tmp = Path(tempfile.mkdtemp(prefix="portal-test-"))
         cls.v1 = Portal("v1", cls.tmp / "v1.db")
         cls.v2 = Portal("v2", cls.tmp / "v2.db")
+        cls.v3 = Portal("v3", cls.tmp / "v3.db")
 
     @classmethod
     def tearDownClass(cls):
         cls.v1.stop()
         cls.v2.stop()
+        cls.v3.stop()
 
     def rows(self, db: Path) -> list[dict]:
         with sqlite3.connect(db) as conn:
@@ -82,6 +84,7 @@ class PortalTests(unittest.TestCase):
     def setUp(self):
         reset_db(self.v1.db)
         reset_db(self.v2.db)
+        reset_db(self.v3.db)
 
     def test_v1_form_order_and_save(self):
         page = self.v1.get("/")
@@ -118,6 +121,27 @@ class PortalTests(unittest.TestCase):
                                   "date": "05/10/2026", "description": "d"})
         self.assertIn("saved=1", url)
         self.assertEqual(self.rows(self.v2.db)[0]["amount"], 10.0)
+
+    def test_v3_has_two_amount_fields_and_total_is_the_amount(self):
+        page = self.v3.get("/")
+        self.assertIn("Amount - subtotal (PEN)", page)
+        self.assertIn("Amount - total (PEN)", page)
+        _, url, _ = self.v3.post({"client": "A", "tax_id": "99123456789", "date": "05/10/2026",
+                                  "amount_total": "118.00", "description": "d"})
+        self.assertIn("saved=1", url)  # the subtotal is optional
+        _, url, _ = self.v3.post({"client": "B", "tax_id": "99123456789", "date": "05/10/2026",
+                                  "subtotal": "100", "amount_total": "118", "description": "d"})
+        api = json.loads(self.v3.get("/api/invoices"))
+        self.assertEqual([(r["amount"], r["subtotal"]) for r in api], [(118.0, None), (118.0, 100.0)])
+
+    def test_excel_has_hard_cases(self):
+        rows = make_invoices.generate()
+        self.assertEqual(rows[0], ["Paper Moth Bakery", "99815188447", make_invoices.date(2026, 9, 10),
+                                   4216.96, "Notebooks and pens"])  # the usual demonstration row
+        self.assertTrue(any("ñ" in r[0].lower() for r in rows))
+        self.assertEqual(sum(isinstance(r[3], str) and "," in r[3] for r in rows), 4)
+        self.assertEqual(sum(isinstance(r[2], str) for r in rows), 4)
+        self.assertEqual(sum(r[3] is None for r in rows), 1)
 
     def test_excel_has_30_fictitious_invoices(self):
         rows = make_invoices.generate()

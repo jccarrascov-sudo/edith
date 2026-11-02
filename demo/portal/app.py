@@ -2,8 +2,10 @@
 
 v1: form with client, tax ID, date, amount, description (in that order).
 v2: the same portal, but the amount field is moved to the top and renamed
-    ("Total due", name="total_due") — used for the repair scene.
-Submissions are stored in SQLite. The stored columns are the same in both versions, so a
+    ("Total due", name="total_due") — used for the automatic repair scene.
+v3: two amount fields, "Amount - subtotal" (optional, stored in `subtotal`) and "Amount -
+    total" (stored in `amount`) — an ambiguous change: Pantallita must ask "Show me one".
+Submissions are stored in SQLite. The stored columns are the same in every version, so a
 tool's result can be compared field by field against the user's demonstration.
 
 Run:  .venv\\Scripts\\python demo\\portal\\app.py --version v1 [--db PATH] [--port 8765]
@@ -24,6 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_DB = DATA_DIR / "portal.db"
 COLUMNS = ("client", "tax_id", "date", "amount", "description")
+OPTIONAL = {"subtotal"}  # v3 only; NULL elsewhere
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS invoices (
@@ -33,6 +36,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     date TEXT NOT NULL,          -- ISO yyyy-mm-dd
     amount REAL NOT NULL,
     description TEXT NOT NULL,
+    subtotal REAL,               -- v3 only
     portal_version TEXT NOT NULL,
     created_at TEXT NOT NULL
 )
@@ -54,6 +58,14 @@ FORMS = {
         ("date", "Invoice date", "date", "dd/mm/yyyy", "text"),
         ("description", "Description", "description", "What was sold", "textarea"),
     ],
+    "v3": [
+        ("client", "Client", "client", "Company name", "text"),
+        ("tax_id", "Tax ID (RUC)", "tax_id", "11 digits", "text"),
+        ("date", "Invoice date", "date", "dd/mm/yyyy", "text"),
+        ("subtotal", "Amount - subtotal (PEN)", "subtotal", "0.00 (optional)", "text"),
+        ("amount_total", "Amount - total (PEN)", "amount", "0.00", "text"),
+        ("description", "Description", "description", "What was sold", "textarea"),
+    ],
 }
 
 CSS = """
@@ -71,7 +83,7 @@ textarea { min-height:70px; resize:vertical; }
 button { font:inherit; background:var(--accent); color:#fff; border:0; border-radius:7px; padding:10px 22px; cursor:pointer; }
 .msg { padding:10px 14px; border-radius:7px; margin-bottom:18px; }
 .ok { background:#e7f6ee; color:var(--ok); } .bad { background:#fdeee6; color:var(--bad); }
-.v2 .card { border-top:4px solid var(--accent); } .v2 .row:first-child input { font-weight:600; }
+.v2 .card { border-top:4px solid var(--accent); } .v3 .card { border-top:4px solid var(--ok); } .v2 .row:first-child input { font-weight:600; }
 table { width:100%; border-collapse:collapse; background:#fff; } th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
 footer { color:var(--muted); font-size:12px; text-align:center; margin:24px; }
 """
@@ -82,6 +94,8 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute(SCHEMA)
+    if "subtotal" not in {r["name"] for r in conn.execute("PRAGMA table_info(invoices)")}:
+        conn.execute("ALTER TABLE invoices ADD COLUMN subtotal REAL")  # databases from before v3
     return conn
 
 
@@ -122,6 +136,8 @@ def validate(values: dict[str, str]) -> dict:
         raise ValueError("Tax ID (RUC) must have exactly 11 digits")
     row["date"] = parse_date(row["date"])
     row["amount"] = parse_amount(row["amount"])
+    sub = (values.get("subtotal") or "").strip()
+    row["subtotal"] = parse_amount(sub) if sub else None
     return row
 
 
@@ -173,9 +189,10 @@ def create_app(version: str = "v1", db_path: Path = DEFAULT_DB) -> FastAPI:
             return page(version, "New invoice", form_html(version, str(exc), ok=False, values=raw))
         with connect(db_path) as conn:
             cur = conn.execute(
-                "INSERT INTO invoices (client, tax_id, date, amount, description, portal_version, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (*[row[c] for c in COLUMNS], version, datetime.now().isoformat(timespec="seconds")))
+                "INSERT INTO invoices (client, tax_id, date, amount, description, subtotal, portal_version, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (*[row[c] for c in COLUMNS], row["subtotal"], version,
+                 datetime.now().isoformat(timespec="seconds")))
             new_id = cur.lastrowid
         return RedirectResponse(f"/?saved={new_id}", status_code=303)
 

@@ -146,11 +146,24 @@ class FieldTests(Base):
 class NoKeyboardTests(unittest.TestCase):
     def test_no_keyboard_hook_or_key_polling_anywhere(self):
         src = Path(actions.__file__).resolve().parents[1]
-        forbidden = ["WH_KEYBOARD", "GetAsyncKeyState", "GetKeyboardState", "pynput", "keyboard."]
+        forbidden = ["WH_KEYBOARD", "GetKeyboardState", "GetKeyState(", "pynput", "keyboard.", "keylog"]
         for path in src.rglob("*.py"):
             text = path.read_text(encoding="utf-8")
             for word in forbidden:
                 self.assertNotIn(word, text, f"{word} found in {path.name}")
+
+    def test_the_only_key_state_read_is_the_launch_modifier(self):
+        """GetAsyncKeyState may appear only in ui/launch.py, only for VK_CONTROL (0x11)."""
+        import re
+        src = Path(actions.__file__).resolve().parents[1]
+        for path in src.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            calls = re.findall(r"GetAsyncKeyState\(([^)]*)\)", text)
+            if path.name != "launch.py" or path.parent.name != "ui":
+                self.assertEqual(calls, [], f"key state read in {path}")
+                continue
+            self.assertEqual(calls, ["VK_CONTROL"])
+            self.assertIn("VK_CONTROL = 0x11", text)
 
 
 class UrlTests(unittest.TestCase):

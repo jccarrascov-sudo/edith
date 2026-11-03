@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 from ..config import Config
 from .agent import Agent
 from .hotkey import GlobalHotkeys
+from .outline import Outline
 from .panel import Actions, Edith
 from .stats import Sampler, StatsView
 from .theme import Theme
@@ -114,6 +115,8 @@ def main(cfg: Config, memory: bool = True) -> int:
         toggle_audio=mem.toggle_audio if cfg.audio["enabled"] else None,
         toggle_memory=mem.toggle, open_activity=open_activity, quit=app.quit), hotkeys)
     edith.set_memory_on(mem.running)
+    outline = Outline(theme)          # presentation mode only
+    agent.outline.connect(lambda rect: outline.show_at(rect) if rect and edith.presentation else outline.hide())
     edith.show()
     try:
         return app.exec()

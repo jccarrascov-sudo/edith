@@ -38,6 +38,18 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   (*"Sent: 4 screen texts, 1 summary, 2 transcript lines · $0.0035"*), or *"Answered
   locally"* (with the reason: no connection, monthly limit reached...). From 80 % of the
   monthly budget it also says how much is used.
+- **Edit from memory** (the star feature): *"put in my notes what the teacher explained"*,
+  *"reply to this email with the data I saw earlier"*. Edith takes the field you were in
+  when you opened it (Ctrl+Alt+E, or a click on the dot, which does not steal the focus),
+  finds the content in its memory and prepares the text. It never writes directly: the
+  panel shows a preview, new text in the accent and removed text struck through in gray,
+  *Enter to apply · Esc to discard*, and under it *"Based on: [thumbnail] class audio · 4 min
+  ago"*. Enter pastes it into the field (your clipboard is saved and restored) and checks it
+  is really there. **"Undo Edith's last edit"** stays in the panel; it uses the app's own undo,
+  checks the text is back, and refuses if you changed the text after Edith's edit.
+- **Presentation mode** (off by default, Ctrl+Alt+P or the options): a soft accent outline
+  around the field Edith is writing into, for demos. It is the only thing Edith ever draws
+  over other apps, and it never takes the focus or a click.
 - **Key moments** (at most 3, one line each, the time in gray) appear under the field when
   there is no answer on screen: a slide change, a date or deadline, a task, "this is in the
   exam". A click asks about that moment. There are no pop-ups.
@@ -301,6 +313,8 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Key moments and block summaries in the background; at most 3 moments in the panel | done |
 | Cost per question/day/month, monthly limit (80 % warning, 100 % local), "Local only", "Sent: ..." line | done |
 | Activity: answer time and daily cost sparklines | done |
+| Edit from memory: target field capture, preview (accent / struck-through), Enter/Esc, "Based on" thumbnail | done |
+| Undo Edith's last edit (checked, refused if the user changed the text since); presentation-mode outline | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |
 | Compile down: network level learned from the verified machine's own request in the sandbox (allow-listed domains), verified by equivalence | done |

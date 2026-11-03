@@ -15,13 +15,15 @@ from dataclasses import dataclass
 from typing import Callable
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QVariantAnimation
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QAbstractButton, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from ..config import ROOT
 from .agent import Agent
 from .hotkey import DEFAULT_OPEN, GlobalHotkeys, from_key_event
+
+DEFAULT_PRESENTATION = "Ctrl+Alt+P"
 from .theme import Theme, inset, raised
 
 log = logging.getLogger(__name__)
@@ -73,6 +75,24 @@ class SoftButton(QAbstractButton):
         self.glyph(p, r, QColor(pal.accent if self.isChecked() else pal.muted))
 
 
+def _thumbnail(path: str, w: int = 72, h: int = 42) -> QPixmap:
+    """A small screenshot with rounded corners, for "Based on: ..."."""
+    src = QPixmap(path)
+    if src.isNull():
+        return QPixmap()
+    src = src.scaled(w, h, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+    out = QPixmap(w, h)
+    out.fill(Qt.transparent)
+    p = QPainter(out)
+    p.setRenderHint(QPainter.Antialiasing)
+    clip = QPainterPath()
+    clip.addRoundedRect(QRectF(0, 0, w, h), 6, 6)
+    p.setClipPath(clip)
+    p.drawPixmap(0, 0, src, (src.width() - w) // 2, (src.height() - h) // 2, w, h)
+    p.end()
+    return out
+
+
 def bars_glyph(p: QPainter, r: QRectF, color: QColor) -> None:
     """Audio: three short vertical bars."""
     p.setPen(Qt.NoPen)
@@ -103,6 +123,8 @@ class Edith(QWidget):
         self.hotkeys = hotkeys
         self.capturing = False   # waiting for a new shortcut to be pressed
         self._moments: list[dict] = []
+        self._footnote = ""
+        self.presentation = bool(self.state.get("presentation", False))
         agent.router.local_only = bool(self.state.get("local_only", False))
         self._press: QPoint | None = None
         self._dragged = False
@@ -121,13 +143,17 @@ class Edith(QWidget):
         agent.status.connect(self._show_status)
         agent.reply.connect(self._show_reply)
         agent.footnote.connect(self._show_footnote)
+        agent.preview.connect(self._show_preview)
+        agent.undoable.connect(self._show_undo)
         if hotkeys:
-            hotkeys.pressed.connect(lambda name: self.toggle() if name == "open" else None)
+            hotkeys.pressed.connect(self._hotkey)
             wanted = self.state.get("hotkey", DEFAULT_OPEN)
             if not hotkeys.set("open", wanted) and wanted != DEFAULT_OPEN:
                 hotkeys.set("open", DEFAULT_OPEN)
+            hotkeys.set("presentation", self.state.get("presentation_hotkey", DEFAULT_PRESENTATION))
         self._label_hotkey()
         self._label_local()
+        self._label_presentation()
         self._restyle()
         self._collapse_now()
 
@@ -180,6 +206,25 @@ class Edith(QWidget):
         self.moments.linkActivated.connect(self._ask_moment)
         outer.addWidget(self.moments)
 
+        # Under an edit's preview: "Based on: [thumbnail] source · 4 min ago".
+        self.based = QWidget()
+        based = QHBoxLayout(self.based)
+        based.setContentsMargins(0, 2, 0, 0)
+        based.setSpacing(10)
+        self.thumb = QLabel()
+        self.based_text = QLabel()
+        self.based_text.setFont(font(8.5))
+        self.based_text.setWordWrap(True)
+        based.addWidget(self.thumb)
+        based.addWidget(self.based_text, 1)
+        self.based.hide()
+        outer.addWidget(self.based)
+
+        # Always there while Edith's last edit can be undone.
+        self.btn_undo = self._text_button(self.agent.t("undo_label"), lambda: self.agent.submit("undo"))
+        self.btn_undo.hide()
+        outer.addWidget(self.btn_undo, 0, Qt.AlignLeft)
+
         # Options (shown by the options button): two short lines of gray text buttons, so they
         # fit in both languages. Activity, pause, quit; then the global shortcut.
         self.menu = QWidget()
@@ -195,10 +240,11 @@ class Edith(QWidget):
         self.btn_default = self._text_button(self.agent.t("hotkey_default"), self._restore_default)
         self.btn_default.hide()   # only while a new shortcut is being captured
         self.btn_local = self._text_button("", self._toggle_local)
+        self.btn_presentation = self._text_button("", self.toggle_presentation)
         self.text_buttons = (self.btn_activity, self.btn_memory, self.btn_quit, self.btn_hotkey,
-                             self.btn_default, self.btn_local)
+                             self.btn_default, self.btn_local, self.btn_presentation)
         for line in ((self.btn_activity, self.btn_memory, self.btn_quit),
-                     (self.btn_hotkey, self.btn_default), (self.btn_local,)):
+                     (self.btn_hotkey, self.btn_default), (self.btn_local, self.btn_presentation)):
             row = QHBoxLayout()
             row.setSpacing(16)
             for b in line:
@@ -249,6 +295,9 @@ class Edith(QWidget):
         self.status.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.answer.setStyleSheet(f"color: {pal.text}; background: transparent;")
         self.foot.setStyleSheet(f"color: {pal.muted}; background: transparent;")
+        self.based_text.setStyleSheet(f"color: {pal.muted}; background: transparent;")
+        self.btn_undo.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {pal.muted};"
+                                    f" padding: 0; }} QPushButton:hover {{ color: {pal.accent}; }}")
         self.moments.setStyleSheet("background: transparent;")
         self._render_moments()
         self.scroll.setStyleSheet(
@@ -310,6 +359,7 @@ class Edith(QWidget):
     # --- open / close ---------------------------------------------------------------------------
     def _collapse_now(self) -> None:
         self.expanded = False
+        self._no_activate(True)
         self.content.hide()
         self.btn_options.setChecked(False)
         self.setFixedSize(DOT + 2 * M, DOT + 2 * M)
@@ -328,6 +378,7 @@ class Edith(QWidget):
         if self.expanded:
             return
         self.expanded = True
+        self._no_activate(False)
         self.content.show()
         self.hover_fx.setOpacity(0.0)
         self._load_moments()
@@ -339,11 +390,31 @@ class Edith(QWidget):
             self.field.setFocus()
             self.field.selectAll()
 
+    def _hotkey(self, name: str) -> None:
+        if name == "open":
+            self.toggle()
+        elif name == "presentation":
+            self.toggle_presentation()
+
+    def _capture_target(self) -> None:
+        """Remember the text field in front before Edith takes the focus (for edits)."""
+        if self.agent.busy:
+            return
+        from ..edit.target import capture
+
+        try:
+            self.agent.target = capture(self.agent.cfg.is_excluded)
+        except Exception:
+            log.debug("could not capture the target field", exc_info=True)
+            self.agent.target = None
+
     def toggle(self) -> None:
         """The global shortcut: open (with the cursor in the field) or close."""
         if self.expanded and self.isActiveWindow():
             self.collapse()
             return
+        if not self.expanded:
+            self._capture_target()
         self.expand()
         self.raise_()
         self.activateWindow()
@@ -399,8 +470,54 @@ class Edith(QWidget):
         self._fit()
 
     def _show_footnote(self, line: str) -> None:
+        self._footnote = line
         self.foot.setText(line)
         self._fit()
+
+    # --- edit from memory -----------------------------------------------------------------------
+    def _show_preview(self, p) -> None:
+        """An edit to confirm: new text in the accent, removed text struck through in gray."""
+        from ..brain.edit import preview_html
+
+        if p is None:
+            self.answer.setTextFormat(Qt.MarkdownText)
+            self.based.hide()
+            self.foot.setText(self._footnote)
+            self._fit()
+            return
+        pal = self.theme.palette
+        old = self.agent.target.text if self.agent.target else ""
+        self.answer.setTextFormat(Qt.RichText)
+        self.answer.setText(preview_html(old, p, pal.accent, pal.muted, pal.text))
+        self.thumb.setPixmap(_thumbnail(p.frame) if p.frame else QPixmap())
+        self.thumb.setVisible(bool(p.frame))
+        self.based_text.setText(self.agent.t("based_on", source=p.source or "memory", ago=self._ago(p.source_ts)))
+        self.based.show()
+        self.foot.setText(self.agent.t("edit_hint"))
+        if not self.expanded:
+            self.expand(activate=False)
+        self._fit()
+
+    def _ago(self, ts: float | None) -> str:
+        import time as _time
+
+        if ts is None:
+            return ""
+        s = max(0, int(_time.time() - ts))
+        return self.agent.t("ago_s", n=s) if s < 60 else self.agent.t("ago_min", n=round(s / 60))
+
+    def _show_undo(self, on: bool) -> None:
+        self.btn_undo.setVisible(on)
+        self._fit()
+
+    def toggle_presentation(self) -> None:
+        self.presentation = not self.presentation
+        self.state["presentation"] = self.presentation
+        self._save_state()
+        self._label_presentation()
+
+    def _label_presentation(self) -> None:
+        self.btn_presentation.setText(self.agent.t("presentation_on" if self.presentation else "presentation_off"))
 
     # --- key moments ----------------------------------------------------------------------------
     def _load_moments(self) -> None:
@@ -549,7 +666,21 @@ class Edith(QWidget):
             self.collapse()
         super().changeEvent(event)
 
+    def _no_activate(self, on: bool) -> None:
+        """While closed, a click on the dot must not take the focus: the field the user is in is
+        read first (the target of an edit), then the panel opens and takes the focus."""
+        import ctypes
+
+        hwnd = int(self.winId())
+        user32 = ctypes.windll.user32
+        style = user32.GetWindowLongW(hwnd, -20)                      # GWL_EXSTYLE
+        new = (style | 0x08000000) if on else (style & ~0x08000000)  # WS_EX_NOACTIVATE
+        if new != style:
+            user32.SetWindowLongW(hwnd, -20, new)
+
     def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton and not self.expanded:
+            self._capture_target()
         if event.button() == Qt.LeftButton:
             self._press = event.globalPosition().toPoint() - self.pos()
             self._dragged = False

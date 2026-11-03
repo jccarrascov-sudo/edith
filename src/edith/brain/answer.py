@@ -46,6 +46,7 @@ class Router:
     def __init__(self, cfg: Config, local: LocalModel | None, t: Callable[..., str],
                  ledger: Ledger | None = None, notes: NoteBook | None = None):
         self.cfg, self.local, self.t = cfg, local, t
+        self._system, self._extra = SYSTEM_PROMPT.format(minutes=cfg.retention["minutes"]), ""
         self.ledger = ledger or Ledger()
         self.notes = notes or NoteBook(cfg)
         self.local_only = False
@@ -55,8 +56,13 @@ class Router:
         return self.ledger.month_total(), float(self.cfg.budget["monthly_limit_usd"])
 
     def respond(self, question: str, on_token: Callable[[str], None] | None = None,
-                confirm_images: Callable[[int], bool] | None = None) -> Reply:
+                confirm_images: Callable[[int], bool] | None = None, system: str | None = None,
+                extra: str = "") -> Reply:
+        """`system` and `extra` (put just before the request) are for other jobs than answering,
+        e.g. preparing an edit (brain/edit.py)."""
         t0 = time.monotonic()
+        self._system = system or SYSTEM_PROMPT.format(minutes=self.cfg.retention["minutes"])
+        self._extra = extra
         timeline = Timeline(self.cfg)
         timeline.prune()
         f = focus(question, time.time(), self.cfg.retention_s)
@@ -89,10 +95,10 @@ class Router:
         has_text = any(e["type"] in ("text", "transcript", "field") for e in events
                        if f.start <= e["ts"] <= f.end + 1)
         images = int(self.cfg.cloud["max_images"]) if (f.visual or not has_text) else 0
-        messages, stats = build_messages(self.cfg, timeline, question, self._options(f, notes, images))
+        messages, stats = self._messages(timeline, question, f, notes, images)
         if stats["images"] and self.cfg.cloud["confirm_images"] and confirm_images \
                 and not confirm_images(stats["images"]):
-            messages, stats = build_messages(self.cfg, timeline, question, self._options(f, notes, 0))
+            messages, stats = self._messages(timeline, question, f, notes, 0)
         client = MetaClient(self.cfg)
         text, usage, cost = client.chat_stream(
             "ask", on_token=on_token, messages=messages, max_tokens=int(self.cfg.cloud["max_output_tokens"]),
@@ -106,6 +112,13 @@ class Router:
         if spent >= limit * float(self.cfg.budget["warn_at"]):
             foot += self.t("budget_warn", pct=round(100 * spent / limit))
         return Reply(text.strip(), foot, "cloud", cost, time.monotonic() - t0)
+
+    def _messages(self, timeline, question, f, notes, images):
+        messages, stats = build_messages(self.cfg, timeline, question, self._options(f, notes, images))
+        messages[0]["content"] = self._system
+        if self._extra:
+            messages[1]["content"].insert(len(messages[1]["content"]) - 1, {"type": "text", "text": self._extra})
+        return messages, stats
 
     def _sent(self, stats: dict) -> str:
         parts = []
@@ -129,8 +142,9 @@ class Router:
         if f.visual:
             context += self._describe(f, timeline)
         try:
-            text = self.local.generate(SYSTEM_PROMPT.format(minutes=self.cfg.retention["minutes"]),
-                                       context + f"\n\nQuestion: {question}", max_tokens=500, on_token=on_token)
+            extra = f"\n\n{self._extra}" if self._extra else ""
+            text = self.local.generate(self._system, context + extra + f"\n\nQuestion: {question}",
+                                       max_tokens=600, on_token=on_token)
         except LocalUnavailable as exc:
             log.warning("Local answer failed: %s", exc)
             return Reply(self.t("no_local", why=why), "", "none")

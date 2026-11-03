@@ -204,3 +204,46 @@ Muse Glimmer 30B UD-Q2_K_XL (llama.cpp b11515, Vulkan, RTX 5050 8 GB, 16 GB RAM)
 - Tests: 27 new (focus parsing, frame picks, diffs, ledger, moments, routing with fakes,
   prompt injection guard): 141 pass.
 
+## Final version, Phase 4 - Edit from memory (Nov 3)
+- `edit/target.py`: the target is the field in front when Edith is opened. With Ctrl+Alt+E
+  the app still has the focus; for a click on the dot, the closed dot now has
+  WS_EX_NOACTIVATE, so the click does not steal the focus (a WM_MOUSEACTIVATE handler was
+  tried first and did not work with Qt's window). Text read through TextPattern/ValuePattern
+  (never passwords or excluded apps). Apply = bring the window back, Ctrl+End (append) or
+  Ctrl+A (replace), paste with the user's clipboard saved and restored, read back to check.
+  Undo = the app's Ctrl+Z, checked; refused if the text changed since; if the app's undo
+  reaches the user's own typing, Edith redoes what it undid and reports it.
+- `brain/edit.py`: intent (edit vs question vs "do the rest" vs undo), the edit prompt, JSON
+  parsing, the source screenshot, the preview (new text in the accent, removed words struck
+  through in gray). The router takes another system prompt plus the target field, so edits
+  also fall back to the local model.
+- Panel: preview, hints, "Based on: [thumbnail] source · N min ago", an always-visible
+  "Undo Edith's last edit" while there is one; presentation mode (Ctrl+Alt+P) with a
+  click-through outline (`ui/outline.py`).
+- Found on the way:
+  1. a probe of Windows 11 Notepad landed in the user's own open note (Notepad restores tabs);
+     the test line was removed with Ctrl+Z and the note checked. Since then live tests only use
+     windows the test opens itself (a Playwright Chromium with local pages).
+  2. Chromium builds its accessibility tree on the first UIA query, so the first read of the
+     focused element was a bare pane: the capture now retries once after 250 ms.
+  3. an empty Chromium textarea reads as U+FFFC, so Edith thought it had text and added a
+     leading newline: normalized.
+  4. the first replies said "Here is the data I saw earlier": the prompt now asks to write as
+     the user, with an example.
+  5. an existing privacy test caught a GetAsyncKeyState call (to release held modifiers):
+     removed; Edith never reads the keyboard.
+- Live results (isolated memory: a lecture + real Invoice Portal screenshots; real Muse Spark;
+  targets in a test Chromium):
+
+  | Scenario | Time to preview | Applied | Undo |
+  |---|---|---|---|
+  | "put in my notes what the teacher said about the exam and the homework" | 8.0 s | 2 correct lines appended | text back exactly |
+  | "reply to this email with the data I saw earlier" | 9.0-9.8 s | client, tax ID, amount exact | text back exactly |
+  | user typed after Edith's edit, then undo | - | - | refused, user's text kept |
+  | user typed and deleted, then undo | - | - | refused, field left exactly as it was |
+
+  Presentation mode: the outline was visible around the field during the preview. Opening
+  by a click on the dot: target captured, panel active with the cursor in its field.
+- Tests: 13 new (intent, parsing, preview HTML, undo refusals without sending a key,
+  router with the edit prompt): 154 pass.
+

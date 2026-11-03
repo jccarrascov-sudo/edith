@@ -86,6 +86,28 @@ TEXT = {
         "kind_slide": "Slide", "kind_deadline": "Date", "kind_task": "Task", "kind_exam": "Important",
         "about_moment": "What happened at {time} ({text})?",
         "privacy": "Your screen never leaves your PC. Only what you ask goes to the cloud.",
+        "edit_no_target": "Click in the field where the text should go, then open me with Ctrl+Alt+E and ask again.",
+        "edit_nothing": "I didn't find that in the last minutes ({why}), so I wrote nothing.",
+        "edit_hint": "Enter to apply · Esc to discard",
+        "based_on": "Based on: {source} · {ago}",
+        "ago_s": "{n} s ago", "ago_min": "{n} min ago",
+        "edit_done": "Done. You can undo it from here.",
+        "edit_discarded": "Discarded. Nothing was written.",
+        "edit_failed": "I couldn't write it ({why}). Nothing was changed.",
+        "why_edit_unreadable": "the field can't be read",
+        "why_edit_window_gone": "the window is no longer there",
+        "why_edit_not_written": "the text didn't appear in the field",
+        "why_edit_no_json": "the reply had no edit",
+        "why_edit_empty": "empty text",
+        "undo_label": "Undo Edith's last edit",
+        "undo_done": "Undone.",
+        "undo_failed": "I couldn't undo it ({why}).",
+        "why_undo_nothing": "there is no edit to undo",
+        "why_undo_window_gone": "the window is no longer there",
+        "why_undo_changed_since": "you changed the text after my edit; undoing would lose your changes",
+        "why_undo_not_undone": "the app's undo didn't bring the text back",
+        "presentation_on": "Presentation mode: on",
+        "presentation_off": "Presentation mode: off",
     },
     "es": {
         "placeholder": "Pregunta por los últimos 10 minutos, o di “haz el resto”",
@@ -147,6 +169,28 @@ TEXT = {
         "kind_slide": "Diapositiva", "kind_deadline": "Fecha", "kind_task": "Tarea", "kind_exam": "Importante",
         "about_moment": "¿Qué pasó a las {time} ({text})?",
         "privacy": "Tu pantalla nunca sale de tu PC. Solo lo que preguntas va a la nube.",
+        "edit_no_target": "Haz clic en el campo donde va el texto, ábreme con Ctrl+Alt+E y vuelve a pedírmelo.",
+        "edit_nothing": "No encontré eso en los últimos minutos ({why}), así que no escribí nada.",
+        "edit_hint": "Enter para aplicar · Esc para descartar",
+        "based_on": "Basado en: {source} · {ago}",
+        "ago_s": "hace {n} s", "ago_min": "hace {n} min",
+        "edit_done": "Listo. Puedes deshacerlo desde aquí.",
+        "edit_discarded": "Descartado. No se escribió nada.",
+        "edit_failed": "No pude escribirlo ({why}). No se cambió nada.",
+        "why_edit_unreadable": "no se puede leer el campo",
+        "why_edit_window_gone": "la ventana ya no está",
+        "why_edit_not_written": "el texto no apareció en el campo",
+        "why_edit_no_json": "la respuesta no traía una edición",
+        "why_edit_empty": "texto vacío",
+        "undo_label": "Deshacer la última edición de Edith",
+        "undo_done": "Deshecho.",
+        "undo_failed": "No pude deshacerlo ({why}).",
+        "why_undo_nothing": "no hay ninguna edición que deshacer",
+        "why_undo_window_gone": "la ventana ya no está",
+        "why_undo_changed_since": "cambiaste el texto después de mi edición; deshacer borraría tus cambios",
+        "why_undo_not_undone": "el deshacer de la app no recuperó el texto",
+        "presentation_on": "Modo presentación: sí",
+        "presentation_off": "Modo presentación: no",
     },
 }
 
@@ -159,6 +203,9 @@ TASK = re.compile(
 
 def text(lang: str, key: str, **kw) -> str:
     return TEXT.get(lang, TEXT["en"]).get(key, TEXT["en"][key]).format(**kw)
+
+
+UNDO = re.compile(r"^\s*(undo|undo (it|that|the last edit)|deshaz(lo)?|deshacer)\b", re.IGNORECASE)
 
 
 def is_task(request: str) -> bool:
@@ -202,6 +249,10 @@ def duration(seconds: float) -> str:
 
 class Agent(QObject):
     status = Signal(str)      # the one gray line ("" clears it)
+    preview = Signal(object)  # an edit to confirm (brain.edit.Proposal), or None when it is gone
+    outline = Signal(object)  # presentation mode: the screen rectangle Edith acts on, or None
+    undoable = Signal(bool)   # an applied edit can be undone
+    _ui = Signal(object)      # run a function on the UI thread (clipboard, keys)
     reply = Signal(str)       # the answer under the text field (repeated while it streams)
     footnote = Signal(str)    # gray line under the answer: what was sent, or "Answered locally"
     busy_changed = Signal(bool)
@@ -217,6 +268,11 @@ class Agent(QObject):
         self._decision = threading.Event()
         self._confirmed = False
         self.router = Router(cfg, local, self.t)
+        from ..edit.target import Typist
+
+        self.typist = Typist()
+        self.target = None                     # the field in front when the panel was opened
+        self._ui.connect(lambda job: job())
 
     def t(self, key: str, **kw) -> str:
         return text(self.lang, key, **kw)
@@ -226,7 +282,10 @@ class Agent(QObject):
         request = request.strip()
         if not request or self.busy:
             return
-        target = self._task if is_task(request) else self._ask
+        from ..brain.edit import is_edit
+
+        target = (self._task if is_task(request) else self._undo if UNDO.search(request)
+                  else self._edit if is_edit(request) else self._ask)
         self.footnote.emit("")
         self._set_busy(True)
         threading.Thread(target=self._guarded, args=(target, request), daemon=True).start()
@@ -268,6 +327,74 @@ class Agent(QObject):
         answer = self.router.respond(question, on_token=on_token, confirm_images=self._confirm_images)
         self.reply.emit(answer.text)
         self.footnote.emit(answer.footnote)
+
+    # --- edit from memory -----------------------------------------------------------------------
+    def _on_ui(self, fn):
+        """Run fn on the UI thread and wait for its result."""
+        box, done = [], threading.Event()
+
+        def job():
+            try:
+                box.append(fn())
+            except Exception as exc:
+                log.exception("UI job failed")
+                box.append(exc)
+            finally:
+                done.set()
+
+        self._ui.emit(job)
+        done.wait(60)
+        if not box or isinstance(box[0], Exception):
+            raise RuntimeError(f"UI job failed: {box[0] if box else 'timeout'}")
+        return box[0]
+
+    def _edit(self, request: str) -> None:
+        from ..brain import edit as ed
+
+        t = self.target
+        if t is None:
+            self.reply.emit(self.t("edit_no_target"))
+            return
+        self.status.emit(self.t("rewinding"))
+        r = self.router.respond(request, system=ed.EDIT_PROMPT,
+                                extra=ed.target_block(t.title, t.process, t.kind, t.name, t.text))
+        if r.where == "none":
+            self.reply.emit(r.text)
+            return
+        p = ed.parse(r.text, time.time())
+        if isinstance(p, str):
+            why = self.t(f"why_edit_{p}") if p in ("no_json", "empty") else p
+            self.reply.emit(self.t("edit_nothing", why=why))
+            return
+        timeline = Timeline(self.cfg)
+        frames = [e for e in timeline.read() if e["type"] == "frame" and timeline.buffer_path(e["path"]).exists()]
+        fr = ed.source_frame(frames, p.source_ts)
+        p.frame = str(timeline.buffer_path(fr["path"])) if fr else None
+        if p.source_ts is None and fr:
+            p.source_ts = fr["ts"]
+        self.status.emit("")
+        self.footnote.emit(r.footnote)
+        self._decision.clear()
+        self.awaiting = True
+        self.preview.emit(p)
+        self.outline.emit(t.rect)
+        self._decision.wait()
+        self.awaiting = False
+        if not self._confirmed:
+            self.preview.emit(None)
+            self.outline.emit(None)
+            self.reply.emit(self.t("edit_discarded"))
+            return
+        ok, why = self._on_ui(lambda: self.typist.apply(t, p.mode, p.text))
+        self.preview.emit(None)
+        self.outline.emit(None)
+        self.undoable.emit(self.typist.last is not None)
+        self.reply.emit(self.t("edit_done") if ok else self.t("edit_failed", why=self.t(f"why_edit_{why}")))
+
+    def _undo(self, _request: str = "") -> None:
+        ok, why = self._on_ui(self.typist.undo)
+        self.undoable.emit(self.typist.last is not None)
+        self.reply.emit(self.t("undo_done") if ok else self.t("undo_failed", why=self.t(f"why_undo_{why}")))
 
     def _confirm_images(self, n: int) -> bool:
         """Ask before screenshots go to the cloud (only if cloud.confirm_images is on)."""

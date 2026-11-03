@@ -131,3 +131,30 @@ Numbers are from real runs; failures are listed too.
   paused color): 114 pass.
 - Not yet: latency and cost sparklines in the metrics view (they need the Phase 3 engine).
 
+
+## Final version - local engine measurements (Nov 3)
+Muse Glimmer 30B UD-Q2_K_XL (llama.cpp b11515, Vulkan, RTX 5050 8 GB, 16 GB RAM), 8k context.
+- It is a DENSE model (52 layers, no experts), so `--cpu-moe` does nothing; the only VRAM
+  knob is the number of GPU layers (`-ngl`). The output and embedding tensors are 1 GB each.
+- It always reasons first (its template defaults to "Reasoning strength: high");
+  `--reasoning off` and `--reasoning-budget 0` are ignored, and with 200 tokens the answer
+  came back EMPTY (all reasoning). `chat_template_kwargs.reasoning_strength = "low"`: 28 s
+  for one sentence. Starting the answer channel directly (`<|start|>assistant to=user
+  <|message|>` on `/completion`): the same sentence in 7.8 s, 29 tokens, correct.
+- Low process priority (`--prio -1`) halves the speed (5.0 -> 2.4 tok/s at 26 layers), so
+  it is not used; the server runs at normal priority.
+- Text, answer channel, normal priority, one sample each:
+
+  | GPU layers | VRAM (server) | Time to first token | Speed |
+  |---|---|---|---|
+  | 6 | ~2.2 GB | 1.7 s | 3.2 tok/s |
+  | 14 | - | 1.5 s | 3.7 tok/s |
+  | 26 | ~6.2 GB | 1.1 s | 5.0 tok/s |
+
+  Server RAM peak 10-11 GB (the machine has ~10 GB free at idle).
+- Image (portal screenshot, vision encoder on the CPU, 26 layers, chat endpoint with low
+  reasoning): 54 s, described the form, its five fields and the button correctly. Raw
+  `/completion` with an image failed ("Failed to tokenize prompt"); the vision encoder on
+  the GPU failed at 26 layers ("failed to process mtmd chunk", out of VRAM).
+- Decision: default 6 GPU layers (~2 GB VRAM, about 1.6x slower than 6 GB), vision encoder
+  on the CPU; images only in low-priority background batches.

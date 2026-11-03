@@ -126,3 +126,24 @@ Takeaways:
   screen; they are expected to matter more for form-filling sessions, where only a field changes.
 - Compressing the UIA tree is essential (-95 %), but for large windows a screenshot is still
   cheaper, hence the cost-based `prefer_text()` decision.
+
+## Levels and repair (Phase 5)
+
+```mermaid
+flowchart LR
+  demo[demo in memory] --> plan[plan of blocks] --> page[page level: Playwright code per block]
+  page -->|equivalence: demo + 2 rows| ok1{pass?}
+  ok1 -- yes --> cap[record its form request in the sandbox] --> net[network level spec]
+  net -->|equivalence: same cases| ok2{pass?}
+  ok2 -- yes --> store[(tools/name: blocks, proof, network.json)]
+  ok2 -- no --> store2[(tools/name: page level only)]
+  use[each use] --> proof{dry proof at the level used}
+  proof -- pass --> run[run: network if allowed, else page]
+  proof -- fail --> rel[relocate moved fields by meaning]
+  rel -- ambiguous --> ask[ask: show me one]
+  rel -- resolved --> page
+```
+
+The network level never runs unverified: its spec is derived from a page-level run that
+already passed, checked for data constants, verified by equivalence on its own, and used only
+for allow-listed sites. A changed request is caught by the dry proof before any row is sent.

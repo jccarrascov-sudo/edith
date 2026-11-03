@@ -161,6 +161,38 @@ Real runs on portal v1 (the user's own demo in Edge):
 | Excel with hard cases (accents/ñ, text amounts, ISO text dates, 1 empty cell) | code in 14 s ($0.015); verification **33/33 checks over 3 rows** on attempt 1; summary "28 rows, total 85,922.76, row 18 skipped: empty Amount"; dry proof 11/11 before use; 28 sent + 1 skipped in 5 s; independent check **29/29 complete rows exact, the empty-cell row not stored, 0 duplicates** |
 | Sabotage: date block changed to `%Y-%m-%d` in the stored machine | dry proof FAIL (10/11), nothing sent; repair rewrote only `b4` ($0.007); 33/33; proof PASS again |
 
+## How it works: compile down and repair by intent (Phase 5)
+
+**Compile down.** A machine that passed its page-level verification (Playwright by labels) is
+run once more in the sandbox while the browser records the request its save step sends. The
+request is generalised: each form value that equals what a fill step put in its field is
+taken from that step (`row[column]` through its transform); hidden inputs are read fresh from
+the form before each send; any other literal value counts as a data value written by hand,
+so the request is not compiled (the same anti-cheat rule as the blocks). The response that
+meant "saved" (status and redirect) becomes the success check. This network-level version is
+verified by equivalence on the same cases (demo + 2 extra rows) and stored only if it passes;
+it is used only for sites in `[network] allow` (default: the local portal). No browser is
+opened at this level: 28 invoices go out in under a second.
+
+**Repair by intent.** Before each use, the proof runs dry at the level that will be used. If
+it fails, Edith first checks whether only the request changed (page level still passes:
+recompile). Otherwise it reads the form as it is now and relocates only the fields that are
+gone, among the fields no other step uses:
+- one unused field shares a meaningful word with the old label or the column → that one;
+- two or more do (portal v3: "Amount - subtotal" and "Amount - total") → ambiguous: Edith
+  does not guess, it asks to be shown one;
+- none does but only one field is left (portal v2: "Total due") → that one;
+- otherwise Muse Spark reads the step's contract and the candidates, and may say "ambiguous".
+
+Then everything is verified again by equivalence and compiled down again. When the user does
+the task again by hand in a form with different fields, the next request learns from that
+new demonstration.
+
+**Seeing the confirmation.** Wait/verify steps used to be written for a guessed success
+message. Before writing code, a sandbox probe now saves the demo row once (fields by label,
+the save button by name) and passes the page's accessibility tree after saving to Muse Spark;
+a failing step's repair also gets the page as it was at that moment.
+
 ## Demo environment
 
 A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitious invoices
@@ -221,8 +253,8 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Minimal soft-UI interface: dot, one-field panel, agent status line, confirm with Enter/Esc | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |
-| Compile down: network level from the demo browser's requests (allow-listed domains) | (planned) |
-| Repair by intent (UIA/SAM relocation) and "Show me one" | (planned) |
+| Compile down: network level learned from the verified machine's own request in the sandbox (allow-listed domains), verified by equivalence | done |
+| Repair by intent (relocate moved fields by meaning, ask for a demo when ambiguous), re-verified | done |
 | Visible fallback mode with SAM highlight | (planned) |
 | Benchmark with real numbers | (planned) |
 

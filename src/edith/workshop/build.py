@@ -20,8 +20,9 @@ from pathlib import Path
 from ..config import ROOT, Config
 from ..learn import source as src_mod
 from ..learn import plan as plan_mod
-from . import codegen, runner, sandbox
+from . import codegen, network, runner, sandbox
 from . import proof as proof_mod
+from . import repair as repair_mod
 
 TOOLS_DIR = ROOT / "tools"
 
@@ -36,7 +37,9 @@ class Verification:
 
 
 class BuildError(RuntimeError):
-    pass
+    def __init__(self, message: str, code: str = ""):
+        super().__init__(message)
+        self.code = code  # a stable key the panel can say in its own language
 
 
 def slugify(name: str) -> str:
@@ -65,6 +68,37 @@ def page_snapshot(url: str) -> str:
             return page.locator("body").aria_snapshot()
         finally:
             browser.close()
+
+
+def after_save_snapshot(plan: dict, row: dict, url: str) -> str | None:
+    """What the page shows right after one row is saved, so the wait/verify blocks are written
+    for the real confirmation instead of a guess. A probe in a sandbox copy of the app: the
+    demo row is put in each field by its label (with the plan's transforms) and the save
+    button is pressed. It only observes; it is not the machine and is never stored."""
+    from playwright.sync_api import sync_playwright
+
+    save = next((b for b in plan["blocks"] if b["type"] == "save"), None)
+    if not save:
+        return None
+    target = save.get("target") or {}
+    try:
+        with sandbox.PortalSandbox(url) as sb, sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.set_default_timeout(5000)
+                page.goto(sb.url)
+                for b in plan["blocks"]:
+                    if b["type"] == "fill_field":
+                        value = runner.transform(row.get(b["column"]), b["transform"])
+                        page.get_by_label(b["field"]["label"], exact=True).fill(value)
+                page.get_by_role(target.get("role") or "button", name=target.get("name"), exact=True).click()
+                page.wait_for_load_state()
+                return runner.page_text(page)
+            finally:
+                browser.close()
+    except Exception:
+        return None
 
 
 def _same(a: str, b: str) -> bool:
@@ -140,12 +174,17 @@ def cases_for(plan: dict, sheet_rows: list[dict] | None, demo_row: dict, user_re
     return cases
 
 
-def verify(plan: dict, code: dict[str, str], cases: list[Case], on_event=None) -> tuple[list[tuple[str, str]], dict]:
-    """Replay every case in ONE sandbox, in order. Returns (problems, stamp)."""
+def verify(plan: dict, code: dict[str, str], cases: list[Case], on_event=None,
+           spec: dict | None = None) -> tuple[list[tuple[str, str]], dict]:
+    """Replay every case in ONE sandbox, in order, at the page level or (given the network
+    `spec`) at the network level. Returns (problems, stamp)."""
     url = plan["target"]["url"]
+    rows = [(c.index, c.row) for c in cases]
     with sandbox.PortalSandbox(url) as sb:
-        results = runner.run_rows(plan, code, [(c.index, c.row) for c in cases], sb.url,
-                                  on_event=on_event, stop_on_error=False)
+        if spec:
+            results = network.run_rows(plan, spec, rows, sb.url, on_event=on_event, stop_on_error=False)
+        else:
+            results = runner.run_rows(plan, code, rows, sb.url, on_event=on_event, stop_on_error=False)
         stored = sb.records()
     save_id = next(b["id"] for b in plan["blocks"] if b["type"] == "save")
     stamp = {"cases": [], "error": None, "error_block": None}
@@ -220,16 +259,19 @@ def fabricate(cfg: Config, plan: dict, client=None, max_attempts: int = 3, log_f
             user_record = None
         log_fn(f"  your own submission: {'found' if user_record else 'NOT found'} in the app's records")
     if not user_record:
-        raise BuildError("I can't find what your demonstration saved, so I have nothing to compare with.")
+        raise BuildError("I can't find what your demonstration saved, so I have nothing to compare with.",
+                         code="no_record")
     cases = cases_for(plan, sheet.rows, demo_row, user_record, extra_rows)
     log_fn(f"  test cases: {', '.join(c.name for c in cases)}")
     texts, numbers = codegen.data_values(sheet.rows, plan["demo"]["values"])
     snapshot = page_snapshot(url)
+    after = after_save_snapshot(plan, demo_row, url)
+    log_fn(f"  page after saving (sandbox probe): {'seen' if after else 'not available'}")
     if client is None and code is None:
         from ..brain.client import MetaClient
         client = MetaClient(cfg)
     try:
-        code = dict(code) if code else codegen.generate(client, plan, snapshot, demo_row, log_fn=log_fn)
+        code = dict(code) if code else codegen.generate(client, plan, snapshot, demo_row, log_fn=log_fn, after=after)
     except codegen.NoCode as exc:
         raise BuildError(f"the model wrote no usable code ({exc})") from None
     missing = [b["id"] for b in plan["blocks"] if b["id"] not in code]
@@ -263,7 +305,7 @@ def fabricate(cfg: Config, plan: dict, client=None, max_attempts: int = 3, log_f
             problem = "\n".join(p for b, p in problems if b == block_id)
             try:
                 code[block_id] = codegen.regenerate(client, plan, block, code[block_id], problem, snapshot,
-                                                    demo_row, log_fn=log_fn)
+                                                    demo_row, log_fn=log_fn, after=after)
                 v.repaired.append(block_id)
             except codegen.NoCode as exc:  # keep the old block; the next round reports it again
                 log_fn(f"    [{block_id}] could not be regenerated: {exc}")
@@ -271,10 +313,13 @@ def fabricate(cfg: Config, plan: dict, client=None, max_attempts: int = 3, log_f
     return code, v
 
 
-def dry_run(tool_dir: Path, log_fn=print) -> tuple[bool, list[tuple[str, str]], dict]:
+def dry_run(tool_dir: Path, log_fn=print, allow: list[str] | None = None,
+            level: str | None = None) -> tuple[bool, list[tuple[str, str]], dict]:
     """The machine's own proof, before each use: replay the demo in a sandbox (no model calls)
-    and check it still produces the stored state change."""
+    and check it still produces the stored state change, at the level that will be used."""
     plan, code = load_tool(tool_dir)
+    level = level or level_for(tool_dir, allow)
+    spec = load_network(tool_dir) if level == network.LEVEL else None
     loaded = proof_mod.load(tool_dir)
     if not loaded:
         return False, [(plan["blocks"][0]["id"], "this machine has no proof")], {}
@@ -290,11 +335,12 @@ def dry_run(tool_dir: Path, log_fn=print) -> tuple[bool, list[tuple[str, str]], 
     stamp: dict = {}
     if not problems:
         try:
-            problems, stamp = verify(plan, code, [case])
+            problems, stamp = verify(plan, code, [case], spec=spec)
         except sandbox.NoSandbox as exc:
             problems = [(plan["blocks"][0]["id"], f"no sandbox: {exc}")]
     matched, total = stamp_counts(stamp) if stamp else (0, 0)
-    log_fn(f"  proof: {'PASS' if not problems else 'FAIL'} ({matched}/{total} checks match your demo)")
+    log_fn(f"  proof ({level} level): {'PASS' if not problems else 'FAIL'} "
+           f"({matched}/{total} checks match your demo)")
     for block_id, problem in problems:
         log_fn(f"    [{block_id}] {problem.splitlines()[0][:170]}")
     return not problems, problems, stamp
@@ -306,6 +352,7 @@ def save_tool(plan: dict, code: dict[str, str], v: Verification) -> Path:
         raise BuildError("a machine that did not pass its verification cannot enter the workshop")
     tool_dir = TOOLS_DIR / slugify(plan["name"])
     (tool_dir / "blocks").mkdir(parents=True, exist_ok=True)
+    (tool_dir / "network.json").unlink(missing_ok=True)  # it was compiled from the old blocks
     for b in plan["blocks"]:
         (tool_dir / "blocks" / f"{b['id']}.py").write_text(code[b["id"]] + "\n", encoding="utf-8")
     meta = {**plan, "built_at": time.time(),
@@ -317,6 +364,104 @@ def save_tool(plan: dict, code: dict[str, str], v: Verification) -> Path:
     _, demo_row = prepare(plan)
     proof_mod.save(tool_dir, plan, demo_row, v.user_record)
     return tool_dir
+
+
+def load_network(tool_dir: Path) -> dict | None:
+    f = tool_dir / "network.json"
+    return json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+
+
+def level_for(tool_dir: Path, allow: list[str] | None) -> str:
+    """Network if this machine has a verified network spec and its site is allow-listed."""
+    plan = json.loads((tool_dir / "plan.json").read_text(encoding="utf-8"))
+    if load_network(tool_dir) and network.allowed(plan["target"]["url"], allow):
+        return network.LEVEL
+    return runner.LEVEL
+
+
+def compile_down(tool_dir: Path, log_fn=print, extra_rows: int = 2) -> dict | None:
+    """Turn a verified page-level machine into its network-level version and verify that by
+    equivalence on the same cases (demo + extra rows). Stored only if it passes."""
+    plan, code = load_tool(tool_dir)
+    (tool_dir / "network.json").unlink(missing_ok=True)
+    loaded = proof_mod.load(tool_dir)
+    if not loaded:
+        return None
+    demo, expected = loaded
+    try:
+        sheet_rows = src_mod.load_sheet(Path(plan["source"]["path"]), plan["source"].get("sheet")).rows
+    except Exception:
+        sheet_rows = [demo["row"]]
+    prepare(plan)
+    plan["demo"]["values"] = dict(demo["typed"])
+    cases = cases_for(plan, sheet_rows, demo["row"], expected["record"], extra_rows)
+    try:
+        with sandbox.PortalSandbox(plan["target"]["url"]) as sb:
+            spec = network.capture(plan, code, demo["row"], sb.url)
+        texts, numbers = codegen.data_values(sheet_rows, demo["typed"])
+        network.check_spec(spec, texts, numbers)
+        problems, stamp = verify(plan, code, cases, spec=spec)
+    except (network.NotCompiled, codegen.UnsafeCode, sandbox.NoSandbox) as exc:
+        log_fn(f"  network level: not compiled ({exc})")
+        return None
+    matched, total = stamp_counts(stamp)
+    if problems:
+        log_fn(f"  network level: verification FAIL ({matched}/{total}); staying at the page level")
+        for block_id, problem in problems[:3]:
+            log_fn(f"    [{block_id}] {problem.splitlines()[0][:150]}")
+        return None
+    spec["verified"] = {"checks": f"{matched}/{total}", "rows": len(cases), "at": time.time()}
+    (tool_dir / "network.json").write_text(json.dumps(spec, indent=2, ensure_ascii=False), encoding="utf-8")
+    log_fn(f"  network level: PASS - {matched}/{total} checks over {len(cases)} rows "
+           f"(POST {spec['action']}, {len(spec['fields'])} form fields)")
+    return spec
+
+
+@dataclass
+class Repair:
+    ok: bool
+    relocated: list = field(default_factory=list)      # repair_mod.Relocation, resolved
+    ambiguous: list = field(default_factory=list)      # repair_mod.Relocation, unresolved
+    regenerated: list[str] = field(default_factory=list)
+    message: str = ""
+
+
+def repair(cfg: Config, tool_dir: Path, allow: list[str] | None = None, log_fn=print, client=None) -> Repair:
+    """The proof failed. Repair by intent: relocate only the fields that are gone (asking for a
+    demo when that is ambiguous), regenerate only blocks that still fail, verify everything
+    again by equivalence, then compile down again."""
+    plan, code = load_tool(tool_dir)
+    if level_for(tool_dir, allow) == network.LEVEL:
+        ok, _p, _s = dry_run(tool_dir, log_fn, level=runner.LEVEL)
+        if ok:  # only the request changed: the page level still works, recompile it
+            log_fn("  the page level still passes: recompiling the network level")
+            compile_down(tool_dir, log_fn)
+            return Repair(True, message="network level recompiled")
+    loaded = proof_mod.load(tool_dir)
+    if not loaded:
+        return Repair(False, message="this machine has no proof to repair against")
+    _demo, expected = loaded
+    try:
+        fields = repair_mod.form_fields(plan["target"]["url"])
+    except Exception as exc:
+        return Repair(False, message=f"could not read the page ({type(exc).__name__}: {exc})")
+    if client is None:
+        from ..brain.client import MetaClient
+        client = MetaClient(cfg)
+    relocations = repair_mod.relocate(plan, fields, client, log_fn)
+    ambiguous = [r for r in relocations if not r.new_label]
+    if ambiguous:
+        return Repair(False, ambiguous=ambiguous, message="ambiguous: show me one")
+    plan, code = repair_mod.apply(plan, code, relocations)
+    try:
+        code, v = fabricate(cfg, plan, client=client, code=code, user_record=dict(expected["record"]), log_fn=log_fn)
+    except (BuildError, sandbox.NoSandbox) as exc:
+        return Repair(False, relocations, message=str(exc))
+    if not v.ok:
+        return Repair(False, relocations, regenerated=v.repaired, message="it still does not match your demo")
+    tool_dir = save_tool(plan, code, v)
+    compile_down(tool_dir, log_fn)
+    return Repair(True, relocations, regenerated=v.repaired, message="repaired")
 
 
 def load_tool(tool_dir: Path) -> tuple[dict, dict[str, str]]:
@@ -341,15 +486,19 @@ def summary(plan: dict, rows: list[tuple[int, dict]]) -> dict:
     return {"send": len(send), "skipped": skipped, "totals": totals}
 
 
-def run_tool(tool_dir: Path, skip_demo_row: bool = True, log_fn=print, on_event=None) -> list[runner.RowResult]:
+def run_tool(tool_dir: Path, skip_demo_row: bool = True, log_fn=print, on_event=None,
+             allow: list[str] | None = None) -> list[runner.RowResult]:
     """Run a stored machine on the rows of its sheet (by default all but the demonstrated one)."""
     plan, _code = load_tool(tool_dir)
-    return run_rows_logged(tool_dir, rows_to_run(plan, skip_demo_row), log_fn=log_fn, on_event=on_event)
+    return run_rows_logged(tool_dir, rows_to_run(plan, skip_demo_row), log_fn=log_fn, on_event=on_event, allow=allow)
 
 
-def run_rows_logged(tool_dir: Path, rows: list[tuple[int, dict]], log_fn=print, on_event=None) -> list[runner.RowResult]:
-    """Run a stored machine on given rows against the real target, logging every event."""
+def run_rows_logged(tool_dir: Path, rows: list[tuple[int, dict]], log_fn=print, on_event=None,
+                    allow: list[str] | None = None) -> list[runner.RowResult]:
+    """Run a stored machine on given rows against the real target, at the lowest verified level
+    allowed for its site, logging every event."""
     plan, code = load_tool(tool_dir)
+    spec = load_network(tool_dir) if level_for(tool_dir, allow) == network.LEVEL else None
     prepare(plan)
     runs = tool_dir / "runs"
     runs.mkdir(exist_ok=True)
@@ -369,6 +518,9 @@ def run_rows_logged(tool_dir: Path, rows: list[tuple[int, dict]], log_fn=print, 
             if on_event:
                 on_event(event)
 
-        results = runner.run_rows(plan, code, rows, plan["target"]["url"], on_event=emit)
+        if spec:
+            results = network.run_rows(plan, spec, rows, plan["target"]["url"], on_event=emit)
+        else:
+            results = runner.run_rows(plan, code, rows, plan["target"]["url"], on_event=emit)
     log_fn(f"  log: {log_path}")
     return results

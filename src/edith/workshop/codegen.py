@@ -185,12 +185,21 @@ def _ask(client, purpose: str, content: str, max_tokens: int, effort: str, log_f
     raise NoCode(f"{purpose}: no usable code after 2 replies")
 
 
-def generate(client, plan: dict, snapshot: str, sample_row: dict, log_fn=print) -> dict[str, str]:
+def _after(after: str | None) -> list[str]:
+    if not after:
+        return []
+    return ["Accessibility snapshot of the page right AFTER one row was saved (a sandbox probe): "
+            "write the wait and verify blocks for what it really shows.", after, ""]
+
+
+def generate(client, plan: dict, snapshot: str, sample_row: dict, log_fn=print,
+             after: str | None = None) -> dict[str, str]:
     """Code for every block in one call (cheaper than one call per block)."""
     nl = chr(10)
     content = nl.join([
         "Plan:", plan_brief(plan), "",
         f"Accessibility snapshot of the form page ({plan['target']['url']}):", snapshot, "",
+        *_after(after),
         f"Example row: {json.dumps(sample_row, ensure_ascii=False, default=str)}", "",
         "Write the code of every block."])
     t0 = time.monotonic()
@@ -200,12 +209,13 @@ def generate(client, plan: dict, snapshot: str, sample_row: dict, log_fn=print) 
 
 
 def regenerate(client, plan: dict, block: dict, old_code: str, problem: str, snapshot: str,
-               sample_row: dict, log_fn=print) -> str:
+               sample_row: dict, log_fn=print, after: str | None = None) -> str:
     """New code for ONE block, given what went wrong. The other blocks are left alone."""
     nl = chr(10)
     content = nl.join([
         "Plan:", plan_brief(plan), "",
         "Accessibility snapshot of the form page:", snapshot, "",
+        *_after(after),
         f"Example row: {json.dumps(sample_row, ensure_ascii=False, default=str)}", "",
         f"Block {block['id']} ({block['type']}: {block.get('title', '')}) currently is:", old_code, "",
         "When it ran on the user's own demonstration it failed:", problem, "",

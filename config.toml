@@ -35,6 +35,11 @@ reasoning_effort = "low"   # minimal | low | medium | high | xhigh | max
 [ui]
 language = "en"           # en | es (neutral Spanish): the panel's texts
 
+[network]
+# Sites where a machine may skip the browser and send the form's request directly (its
+# network level, verified like the page level). Anything else always runs in the browser.
+allow = ["127.0.0.1", "localhost"]
+
 [budget]
 session_limit_usd = 5.0   # calls stop when a session costs more than this
 session_idle_hours = 3    # a new session starts after this long without API calls

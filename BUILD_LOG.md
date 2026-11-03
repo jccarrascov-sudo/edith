@@ -86,3 +86,29 @@ Numbers are from real runs; failures are listed too.
   reference are in the panel's language.
 - Idle CPU (30 s, after start-up): UI alone 0.11 % of total CPU (2.1 % of one core of 20),
   83 MB; UI + memory recording 1.14 % (22.9 % of one core), 851 MB (whisper model).
+
+## Phase 5 — Compile down & repair by intent (closed Nov 2)
+- Network level (`workshop/network.py`): learned from the verified page-level machine's own
+  request in the sandbox (not from the user's browser, which is not instrumented), with
+  anti-cheat on constants, hidden inputs refreshed per send, and the "saved" response as the
+  success check; verified by equivalence like the page level; allow-list in config.toml.
+- Repair by intent (`workshop/repair.py`): relocate only fields that are gone; ambiguous ->
+  ask for a demo; re-verify; recompile. A newer demo of a changed form rebuilds the machine.
+- Sandbox probe of the page after saving, given to code generation and repairs.
+- 11 new tests on real portal processes v1/v2/v3 (no model calls): v2 relocation 33/33,
+  v3 ambiguous, network capture 33/33, old request fails its proof on v2, anti-cheat.
+- Live acceptance, real agent + real Muse Spark, SIMULATED demos (real submit + memory events
+  written to an isolated timeline), hard-case Excel (row 19 has an empty Amount):
+  - run 1 FAILED at scene A: wait/verify blocks guessed the success message for 3 rounds
+    (each repair fixed one and broke the next); scenes B/C then had no machine. Fixed with
+    the after-save probe; build errors are now said in the panel's language.
+  - run 2, all scenes passed ($0.05 in total):
+    A. v1: verification 33/33 on attempt 1, network level 33/33; 28 sent + 1 skipped in
+       0.3 s at the network level; independent check 29/29 exact, 0 duplicates.
+    B. portal -> v2: proof failed at both levels; b5 relocated "Amount (PEN)" -> "Total due
+       (PEN)" with no model call; 33/33; network recompiled; 28 sent in 0.7 s; 28/28 exact
+       (fresh v2 database, so the demo row is not in it). 16 s end to end.
+    C. portal -> v3: "where does Amount go now: subtotal / total? Show me one" - nothing sent.
+    D. one demo by hand in v3 (simulated): new machine, 33/33, network level; 28 sent in
+       0.6 s; 29/29 exact.
+- Not done: the visible screen-level fallback with SAM (cut, as planned).

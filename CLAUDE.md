@@ -141,7 +141,7 @@ than half a day, warn and apply the cuts)
 4. Interface (redesigned Nov 2): dot + panel, agent mode with a status line and Enter/Esc
    confirmation, activity view, live light/dark. Accept: whole flow from the panel,
    understandable without the terminal; UI < 2 % CPU idle.
-5. Compile down & repair (Nov 3): network log of the demo browser (allowed domains only);
+5. Compile down & repair (DONE Nov 2; network level learned from the sandbox run, not the user's browser): network log of the demo browser (allowed domains only);
    network level verified like the others; the level used is reported in the status line. Repair by intent: v2
    repairs itself; v3 asks to be shown one.
    Accept: v2 back to 30/30 changing one block unaided; v3 asks for a demo then works;
@@ -169,7 +169,8 @@ src/edith/
   memory/   capture.py actions.py audio.py timeline.py winutil.py uia.py   (Phase 1)
   brain/    ask.py tokens.py client.py (costs + brake)
   learn/    segment.py source.py plan.py cli.py                  (Phase 2)
-  workshop/ codegen.py runner.py sandbox.py build.py cli.py       (Phase 3)
+  workshop/ codegen.py runner.py sandbox.py build.py cli.py proof.py (Phase 3)
+            network.py repair.py                                    (Phase 5)
   vision/   sam.py
   ui/       app.py panel.py agent.py theme.py stats.py           (interface)
 demo/       portal/app.py make_invoices.py demo_reset.py

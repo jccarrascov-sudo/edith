@@ -68,7 +68,7 @@ class TaskDetectionTests(unittest.TestCase):
 
     def test_texts_exist_in_both_languages(self):
         self.assertEqual(set(agent.TEXT["en"]), set(agent.TEXT["es"]))
-        self.assertIn("Escribiendo", agent.text("es", "writing", i=1, n=3, where="portal"))
+        self.assertIn("Escribiendo", agent.text("es", "writing", i=1, n=3, where="portal", level="red"))
 
 
 class MachineLookupTests(unittest.TestCase):

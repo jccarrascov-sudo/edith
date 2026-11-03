@@ -9,7 +9,6 @@ from pathlib import Path
 from ..config import Config
 from ..learn.plan import PLANS_DIR
 from . import build
-from . import proof as proof_mod
 
 YES = ("", "y", "yes", "s", "si", "sí")
 
@@ -52,32 +51,30 @@ def build_and_run(cfg: Config, plan_path: Path | None = None, confirm: bool = Tr
     tool_dir = build.save_tool(plan, code, v)
     repaired = f", fixed {', '.join(v.repaired)} on the way" if v.repaired else ""
     print(f'"{plan["name"]}" passed on attempt {v.attempts}{repaired}. On the shelf: {tool_dir}')
+    print("Compiling down to the network level...")
+    build.compile_down(tool_dir)
     return run_machine(cfg, tool_dir, confirm=confirm, proof_checked=True)
 
 
 def repair_from_proof(cfg: Config, tool_dir: Path) -> bool:
-    """The proof failed: re-verify against the stored demo and regenerate only broken blocks."""
-    plan, code = build.load_tool(tool_dir)
-    _demo, expected = proof_mod.load(tool_dir)
+    """The proof failed: repair by intent (relocate moved fields, regenerate only broken
+    blocks), verified again against the stored demo."""
     print("  repairing against your demo...")
-    try:
-        code, v = build.fabricate(cfg, plan, code=code, user_record=dict(expected["record"]))
-    except (build.BuildError, build.sandbox.NoSandbox) as exc:
-        print(f"  Hmm. {exc}")
-        return False
-    show_stamps(v)
-    if not v.ok:
-        return False
-    build.save_tool(plan, code, v)
-    print(f"  repaired: {', '.join(v.repaired) or 'nothing to change'}")
-    return True
+    r = build.repair(cfg, tool_dir, allow=cfg.network["allow"])
+    for x in r.relocated:
+        print(f'  [{x.block_id}] "{x.old_label}" -> "{x.new_label}" ({x.how})')
+    for x in r.ambiguous:
+        print(f'  [{x.block_id}] "{x.column}" could go in: {", ".join(x.candidates)}. Show me one.')
+    if r.ok:
+        print(f"  repaired: {', '.join([x.block_id for x in r.relocated] + r.regenerated) or r.message}")
+    return r.ok
 
 
 def run_machine(cfg: Config, tool_dir: Path, confirm: bool = True, proof_checked: bool = False) -> int:
     plan, _ = build.load_tool(tool_dir)
     if not proof_checked:
         print(f'Checking "{plan["name"]}" against its proof first...')
-        ok, _problems, _stamp = build.dry_run(tool_dir)
+        ok, _problems, _stamp = build.dry_run(tool_dir, allow=cfg.network["allow"])
         if not ok:
             print("The proof failed, so I won't run it like this.")
             if not repair_from_proof(cfg, tool_dir):
@@ -93,9 +90,10 @@ def run_machine(cfg: Config, tool_dir: Path, confirm: bool = True, proof_checked
     if confirm and not yes(input("Send them? [Y/n] ")):
         print("Okay, nothing sent. The machine is on the shelf.")
         return 0
-    print(f'Running "{plan["name"]}"...')
+    level = build.level_for(tool_dir, cfg.network["allow"])
+    print(f'Running "{plan["name"]}" at the {level} level...')
     t0 = time.monotonic()
-    results = build.run_tool(tool_dir)
+    results = build.run_tool(tool_dir, allow=cfg.network["allow"])
     ok = sum(r.ok for r in results)
     skipped = sum(bool(r.skipped) for r in results)
     failed = len(results) - ok - skipped
@@ -123,4 +121,6 @@ def list_tools() -> None:
     for d in dirs:
         plan = json.loads((d / "plan.json").read_text(encoding="utf-8"))
         has_proof = "proof" if (d / "proof" / "expected.json").exists() else "NO proof"
+        if (d / "network.json").exists():
+            has_proof += ", network level"
         print(f'  {d.name:<24} "{plan["name"]}" ({has_proof}): {plan["intent"]}')

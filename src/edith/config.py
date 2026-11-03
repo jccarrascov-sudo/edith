@@ -46,6 +46,7 @@ DEFAULTS: dict[str, dict] = {
     },
     "budget": {"session_limit_usd": 5.0, "session_idle_hours": 3},
     "ui": {"language": "en"},
+    "network": {"allow": ["127.0.0.1", "localhost"]},
     "exclude": {"titles": [], "processes": []},
 }
 
@@ -58,6 +59,7 @@ class Config:
     ask: dict
     budget: dict
     ui: dict
+    network: dict
     exclude: dict
     root: Path
 

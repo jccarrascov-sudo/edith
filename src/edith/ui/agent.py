@@ -22,7 +22,6 @@ from ..learn import segment as seg_mod
 from ..learn import source as src_mod
 from ..memory.timeline import Timeline
 from ..workshop import build
-from ..workshop import proof as proof_mod
 
 log = logging.getLogger(__name__)
 
@@ -35,15 +34,24 @@ TEXT = {
         "planning": "Working out the steps…",
         "building": "Building and checking it against what you did…",
         "checking": "Checking “{name}” against its proof…",
-        "repairing": "The proof failed. Repairing only the broken step…",
+        "repairing": "The page changed. Repairing only what moved…",
+        "compiling": "Looking for a faster way to send it…",
         "not_verified": "I couldn't make it match what you did, so I sent nothing.",
-        "confirm": "Like {demo}.\nSend {n} rows{totals}.{skipped}\nEnter to send · Esc to cancel",
+        "no_record": "I can't find what your demo saved in the page, so I have nothing to check against. "
+                     "Do one by hand, then ask me again.",
+        "cant_build": "I couldn't build it ({error}), so I sent nothing.",
+        "ambiguous": "The form changed and I'm not sure where “{column}” goes now: {options}. "
+                     "Show me one: fill one by hand, then ask me again.",
+        "repaired": "The form changed: “{column}” now goes in “{new}”. I checked it against your demo again.\n",
+        "confirm": "{note}Like {demo}.\nSend {n} rows{totals}.{skipped}\nEnter to send · Esc to cancel",
         "demo_ref": "your demo at {time} in {where}",
         "skipped_row": "\nRow {row} is skipped ({why}).",
         "empty": "empty {cols}",
-        "writing": "Writing row {i} of {n} in {where}…",
+        "writing": "Writing row {i} of {n} in {where} · {level}…",
         "cancelled": "Okay, nothing sent.",
-        "done": "{ok} sent{skipped}{failed}. About {saved} saved.",
+        "done": "{ok} sent{skipped}{failed} ({level} level, {seconds}). About {saved} saved.",
+        "level_network": "network",
+        "level_page": "page",
         "done_skipped": ", {n} skipped",
         "done_skipped_1": ", 1 skipped",
         "done_failed": ", {n} failed",
@@ -58,15 +66,24 @@ TEXT = {
         "planning": "Entendiendo los pasos…",
         "building": "Construyendo y comprobando contra lo que hiciste…",
         "checking": "Comprobando “{name}” con su prueba…",
-        "repairing": "La prueba falló. Reparando solo el paso roto…",
+        "repairing": "La página cambió. Reparando solo lo que se movió…",
+        "compiling": "Buscando una forma más rápida de enviarlo…",
         "not_verified": "No logré que coincidiera con lo que hiciste, así que no envié nada.",
-        "confirm": "Como {demo}.\nEnviar {n} filas{totals}.{skipped}\nEnter para enviar · Esc para cancelar",
+        "no_record": "No encuentro lo que guardó tu demo en la página, así que no tengo con qué comprobar. "
+                     "Haz una a mano y vuelve a pedírmelo.",
+        "cant_build": "No pude construirla ({error}), así que no envié nada.",
+        "ambiguous": "El formulario cambió y no sé dónde va ahora “{column}”: {options}. "
+                     "Muéstrame una: llena una a mano y vuelve a pedírmelo.",
+        "repaired": "El formulario cambió: “{column}” ahora va en “{new}”. Lo volví a comprobar con tu demo.\n",
+        "confirm": "{note}Como {demo}.\nEnviar {n} filas{totals}.{skipped}\nEnter para enviar · Esc para cancelar",
         "demo_ref": "tu demo de las {time} en {where}",
         "skipped_row": "\nLa fila {row} se omite ({why}).",
         "empty": "{cols} vacío",
-        "writing": "Escribiendo fila {i} de {n} en {where}…",
+        "writing": "Escribiendo fila {i} de {n} en {where} · {level}…",
         "cancelled": "Listo, no envié nada.",
-        "done": "{ok} enviadas{skipped}{failed}. Unos {saved} ahorrados.",
+        "done": "{ok} enviadas{skipped}{failed} (nivel {level}, {seconds}). Unos {saved} ahorrados.",
+        "level_network": "red",
+        "level_page": "página",
         "done_skipped": ", {n} omitidas",
         "done_skipped_1": ", 1 omitida",
         "done_failed": ", {n} con error",
@@ -110,6 +127,14 @@ def find_machine(workbook: Path, url: str) -> Path | None:
         if same_source and origin(plan["target"]["url"]) == origin(url):
             return d
     return None
+
+
+def shown_again(tool_dir: Path, demo: seg_mod.Segment) -> bool:
+    """The user did the task again after the machine was built, in a form with different
+    fields (e.g. after Edith asked "show me one"): learn from that new demo instead."""
+    plan = json.loads((tool_dir / "plan.json").read_text(encoding="utf-8"))
+    labels = {b["field"]["label"] for b in plan["blocks"] if b["type"] == "fill_field"}
+    return demo.end > plan["demo"].get("end", 0) + 1 and set(demo.final_values) != labels
 
 
 def duration(seconds: float) -> str:
@@ -194,6 +219,10 @@ class Agent(QObject):
         titles = [e.get("window", "") for e in events if (e.get("process") or "").lower() == "excel.exe"]
         workbook = src_mod.find_workbook(titles)
         tool_dir = find_machine(workbook, demo.url) if workbook and demo.url else None
+        self.note = ""
+        if tool_dir and shown_again(tool_dir, demo):
+            log.info("a newer demo fills a different form: building a new machine from it")
+            tool_dir = None
         if tool_dir:
             if not self._prove(tool_dir):
                 return
@@ -202,11 +231,17 @@ class Agent(QObject):
             plan = plan_mod.make_plan(self.cfg, demo, request, events, log_fn=log.info)
             plan_mod.save_plan(plan)
             self.status.emit(self.t("building"))
-            code, v = build.fabricate(self.cfg, plan, log_fn=log.info)
+            try:
+                code, v = build.fabricate(self.cfg, plan, log_fn=log.info)
+            except build.BuildError as exc:
+                self.reply.emit(self.t(exc.code) if exc.code else self.t("cant_build", error=str(exc)))
+                return
             if not v.ok:
                 self.reply.emit(self.t("not_verified"))
                 return
             tool_dir = build.save_tool(plan, code, v)
+            self.status.emit(self.t("compiling"))
+            build.compile_down(tool_dir, log_fn=log.info)
         self._confirm_and_run(tool_dir, demo)
 
     def _demo_ref(self, demo: seg_mod.Segment) -> str:
@@ -222,18 +257,22 @@ class Agent(QObject):
 
     def _prove(self, tool_dir: Path) -> bool:
         """Dry proof before every use; on failure repair against the stored demo (golden rule)."""
-        plan, code = build.load_tool(tool_dir)
+        plan, _code = build.load_tool(tool_dir)
+        allow = self.cfg.network["allow"]
         self.status.emit(self.t("checking", name=plan["name"]))
-        ok, _problems, _stamp = build.dry_run(tool_dir, log_fn=log.info)
+        ok, _problems, _stamp = build.dry_run(tool_dir, log_fn=log.info, allow=allow)
         if ok:
             return True
         self.status.emit(self.t("repairing"))
-        _demo, expected = proof_mod.load(tool_dir)
-        code, v = build.fabricate(self.cfg, plan, code=code, user_record=dict(expected["record"]), log_fn=log.info)
-        if not v.ok:
+        r = build.repair(self.cfg, tool_dir, allow=allow, log_fn=log.info)
+        if r.ambiguous:
+            a = r.ambiguous[0]
+            self.reply.emit(self.t("ambiguous", column=a.column, options=" / ".join(f"“{c}”" for c in a.candidates)))
+            return False
+        if not r.ok:
             self.reply.emit(self.t("not_verified"))
             return False
-        build.save_tool(plan, code, v)
+        self.note = "".join(self.t("repaired", column=x.column, new=x.new_label) for x in r.relocated)
         return True
 
     def _confirm_and_run(self, tool_dir: Path, demo: seg_mod.Segment) -> None:
@@ -248,7 +287,8 @@ class Agent(QObject):
         self.status.emit("")
         self._decision.clear()
         self.awaiting = True
-        self.reply.emit(self.t("confirm", demo=self._demo_ref(demo), n=s["send"], totals=totals, skipped=skipped))
+        self.reply.emit(self.t("confirm", note=getattr(self, "note", ""), demo=self._demo_ref(demo), n=s["send"],
+                               totals=totals, skipped=skipped))
         self._decision.wait()
         self.awaiting = False
         if not self._confirmed:
@@ -257,21 +297,25 @@ class Agent(QObject):
 
         self.reply.emit("")
         where = urllib.parse.urlsplit(plan["target"]["url"]).netloc or plan["target"]["url"]
+        allow = self.cfg.network["allow"]
+        level = self.t(f"level_{build.level_for(tool_dir, allow)}")
         count = {"i": 0}
 
         def on_event(event: dict) -> None:
             if event.get("event") == "row_in":
                 count["i"] += 1
-                self.status.emit(self.t("writing", i=count["i"], n=s["send"], where=where))
+                self.status.emit(self.t("writing", i=count["i"], n=s["send"], where=where, level=level))
 
         t0 = time.monotonic()
-        results = build.run_rows_logged(tool_dir, rows, log_fn=log.info, on_event=on_event)
+        results = build.run_rows_logged(tool_dir, rows, log_fn=log.info, on_event=on_event, allow=allow)
+        seconds = time.monotonic() - t0
         ok = sum(r.ok for r in results)
         n_skipped = sum(bool(r.skipped) for r in results)
         failed = len(results) - ok - n_skipped
-        saved = max(0.0, plan.get("seconds_per_row_by_hand", 0) * ok - (time.monotonic() - t0))
+        saved = max(0.0, plan.get("seconds_per_row_by_hand", 0) * ok - seconds)
         self.reply.emit(self.t(
-            "done", ok=ok, saved=duration(saved),
+            "done", ok=ok, saved=duration(saved), level=level,
+            seconds=f"{seconds:.1f} s" if seconds < 60 else duration(seconds),
             skipped=(self.t("done_skipped_1") if n_skipped == 1 else self.t("done_skipped", n=n_skipped))
             if n_skipped else "",
             failed=self.t("done_failed", n=failed) if failed else ""))

@@ -44,7 +44,14 @@ DEFAULTS: dict[str, dict] = {
         "max_output_tokens": 4000,
         "reasoning_effort": "low",
     },
-    "budget": {"session_limit_usd": 5.0, "session_idle_hours": 3},
+    "budget": {"session_limit_usd": 5.0, "session_idle_hours": 3, "monthly_limit_usd": 10.0,
+               "warn_at": 0.8, "input_per_m": 1.25, "cached_per_m": 0.15, "output_per_m": 4.25},
+    "cloud": {"max_images": 3, "image_width": 1024, "older_image_width": 640, "confirm_images": False,
+              "timeout_s": 90, "max_output_tokens": 2000},
+    "local": {"enabled": True, "server": "", "model": "", "mmproj": "", "file": "Muse-Glimmer-30B-UD-Q2_K_XL.gguf",
+              "gpu_layers": 6, "context": 8192, "port": 0, "threads": 0, "timeout_s": 120,
+              "load_timeout_s": 300},
+    "notes": {"enabled": True, "summary_minutes": 10, "check_s": 30, "keep_hours": 24},
     "ui": {"language": "en"},
     "network": {"allow": ["127.0.0.1", "localhost"]},
     "exclude": {"titles": [], "processes": []},
@@ -58,6 +65,9 @@ class Config:
     retention: dict
     ask: dict
     budget: dict
+    cloud: dict
+    local: dict
+    notes: dict
     ui: dict
     network: dict
     exclude: dict
@@ -74,6 +84,11 @@ class Config:
     @property
     def audio_dir(self) -> Path:
         return self.buffer_dir / "audio"
+
+    @property
+    def notes_path(self) -> Path:
+        """Background notes (block summaries, key moments): local text, kept keep_hours."""
+        return self.buffer_dir / "notes.jsonl"
 
     @property
     def timeline_path(self) -> Path:

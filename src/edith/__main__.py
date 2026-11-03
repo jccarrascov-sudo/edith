@@ -17,18 +17,21 @@ def run(cfg, duration: float | None = None) -> None:
     from .memory.actions import ClickWatcher, FieldWatcher
     from .memory.audio import AudioRecorder
     from .memory.capture import PrivacyGate, ScreenCapture
+    from .memory.screentext import TextWatcher
 
     log = logging.getLogger("edith")
     timeline = Timeline(cfg)
     timeline.prune()
     stop = threading.Event()
     gate = PrivacyGate(cfg.capture["interval_s"])
-    capture = ScreenCapture(cfg, timeline, stop, gate)
+    texts = TextWatcher(cfg, timeline, stop, gate)
+    capture = ScreenCapture(cfg, timeline, stop, gate, on_frame=texts.poke)
     clicks = ClickWatcher(cfg, timeline, stop, gate, on_click=capture.burst)
     fields = FieldWatcher(cfg, timeline, stop)
     workers = [threading.Thread(target=capture.run, name="capture", daemon=True),
                threading.Thread(target=clicks.run, name="clicks", daemon=True),
-               threading.Thread(target=fields.run, name="fields", daemon=True)]
+               threading.Thread(target=fields.run, name="fields", daemon=True),
+               threading.Thread(target=texts.run, name="screentext", daemon=True)]
     recorder = None
     if cfg.audio["enabled"]:
         recorder = AudioRecorder(cfg, timeline, stop, gate)
@@ -62,8 +65,8 @@ def run(cfg, duration: float | None = None) -> None:
                  f"{recorder.private_blocks} dropped for privacy), "
                  f"{recorder.segments} transcript segments") if recorder else ""
         log.info("Stopped: %d frames saved, %d excluded ticks, %d clicks (%d private, %d injected "
-                 "ignored), %d field changes%s", capture.saved, capture.excluded_ticks, clicks.clicks,
-                 clicks.private_clicks, clicks.injected_clicks, fields.changes, audio)
+                 "ignored), %d field changes, %d screen texts%s", capture.saved, capture.excluded_ticks, clicks.clicks,
+                 clicks.private_clicks, clicks.injected_clicks, fields.changes, texts.logged, audio)
 
 
 def _dpi_aware() -> None:
@@ -83,7 +86,8 @@ def main(argv: list[str] | None = None) -> None:
     p_run.add_argument("--duration", type=float, help="stop automatically after N seconds")
     p_ask = sub.add_parser("ask", help="ask a question about the last minutes")
     p_ask.add_argument("question")
-    p_ask.add_argument("--dry-run", action="store_true", help="show the context, do not call the API")
+    p_ask.add_argument("--dry-run", action="store_true", help="show the context, do not call any model")
+    p_ask.add_argument("--local", action="store_true", help="answer with the local model only ($0)")
     sub.add_parser("status", help="show what is in the buffer")
     p_do = sub.add_parser("do", help='learn from what you just did, e.g. do "do the rest"')
     p_do.add_argument("request", nargs="?", default="do the rest",
@@ -118,15 +122,16 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "run":
         run(cfg, args.duration)
     elif args.command == "ask":
-        from .brain.ask import ask
-        Timeline(cfg).prune()
-        ask(cfg, args.question, dry_run=args.dry_run)
+        from .brain.answer import cli as ask_cli
+        ask_cli(cfg, args.question, dry_run=args.dry_run, local_only=args.local)
     elif args.command == "cost":
         from .brain.client import CostMeter
         meter = CostMeter(float(cfg.budget["session_limit_usd"]), float(cfg.budget["session_idle_hours"]))
         if args.new:
             meter.new_session()
         print(meter.summary())
+        from .brain.client import Ledger
+        print(f"this month: ${Ledger().month_total():.4f} of ${float(cfg.budget['monthly_limit_usd']):.2f}")
     elif args.command == "do":
         from .learn.cli import do_the_rest
         Timeline(cfg).prune()

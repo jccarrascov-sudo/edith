@@ -22,8 +22,9 @@ class Memory:
     """The recorders of `edith run` as daemon threads, which can be paused and resumed.
     Pausing stops them; resuming starts fresh ones on the same buffer."""
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, local=None):
         self.cfg = cfg
+        self.local = local          # the local model, for background notes
         self.stop_event: threading.Event | None = None
         self.recorder = None
         self.listening = True
@@ -36,6 +37,7 @@ class Memory:
         from ..memory.actions import ClickWatcher, FieldWatcher
         from ..memory.audio import AudioRecorder
         from ..memory.capture import PrivacyGate, ScreenCapture
+        from ..memory.screentext import TextWatcher
         from ..memory.timeline import Timeline
 
         if self.running:
@@ -44,8 +46,9 @@ class Memory:
         timeline = Timeline(cfg)
         timeline.prune()
         gate = PrivacyGate(cfg.capture["interval_s"])
-        capture = ScreenCapture(cfg, timeline, stop, gate)
-        workers = [capture.run, ClickWatcher(cfg, timeline, stop, gate, on_click=capture.burst).run,
+        texts = TextWatcher(cfg, timeline, stop, gate)
+        capture = ScreenCapture(cfg, timeline, stop, gate, on_frame=texts.poke)
+        workers = [capture.run, texts.run, ClickWatcher(cfg, timeline, stop, gate, on_click=capture.burst).run,
                    FieldWatcher(cfg, timeline, stop).run]
         self.recorder = None
         if cfg.audio["enabled"]:
@@ -59,6 +62,10 @@ class Memory:
                     timeline.prune()
                 except Exception:
                     log.exception("Prune failed")
+
+        if cfg.notes["enabled"] and self.local is not None:
+            from ..brain.notes import NotesWorker
+            workers.append(NotesWorker(cfg, timeline, self.local, stop).run)
 
         for w in workers + [janitor]:
             threading.Thread(target=w, daemon=True).start()
@@ -85,12 +92,17 @@ def main(cfg: Config, memory: bool = True) -> int:
     app.setApplicationName("Edith")
     app.setApplicationDisplayName("Edith")
     app.setQuitOnLastWindowClosed(False)
-    mem = Memory(cfg)
+    from ..brain.local import LocalModel
+
+    local = LocalModel(cfg)
+    local.start()                      # loads and warms up in the background
+    mem = Memory(cfg, local)
     if memory:
         mem.start()
     sampler_stop = threading.Event()
     theme = Theme()
-    agent = Agent(cfg)
+    agent = Agent(cfg, local)
+    local.on_notice = lambda key: None if agent.busy else agent.status.emit(agent.t(key))
     hotkeys = GlobalHotkeys()
     stats = StatsView(cfg, theme, Sampler(cfg, sampler_stop), agent.lang)
 
@@ -109,6 +121,7 @@ def main(cfg: Config, memory: bool = True) -> int:
         mem.stop()
         sampler_stop.set()
         hotkeys.close()
+        local.stop()
 
 
 def launch() -> None:

@@ -102,6 +102,8 @@ class Edith(QWidget):
         self.dot_pos = self._initial_position()
         self.hotkeys = hotkeys
         self.capturing = False   # waiting for a new shortcut to be pressed
+        self._moments: list[dict] = []
+        agent.router.local_only = bool(self.state.get("local_only", False))
         self._press: QPoint | None = None
         self._dragged = False
         self.memory_on = True
@@ -118,12 +120,14 @@ class Edith(QWidget):
         agent.busy_changed.connect(lambda _busy: self._update_dot())
         agent.status.connect(self._show_status)
         agent.reply.connect(self._show_reply)
+        agent.footnote.connect(self._show_footnote)
         if hotkeys:
             hotkeys.pressed.connect(lambda name: self.toggle() if name == "open" else None)
             wanted = self.state.get("hotkey", DEFAULT_OPEN)
             if not hotkeys.set("open", wanted) and wanted != DEFAULT_OPEN:
                 hotkeys.set("open", DEFAULT_OPEN)
         self._label_hotkey()
+        self._label_local()
         self._restyle()
         self._collapse_now()
 
@@ -153,12 +157,28 @@ class Edith(QWidget):
         self.answer.setFont(font(10.5, light=True))
         self.answer.setWordWrap(True)
         self.answer.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.answer.setTextFormat(Qt.MarkdownText)   # Muse Spark answers with **bold** and lists
         self.scroll = QScrollArea()
         self.scroll.setWidget(self.answer)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QScrollArea.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         outer.addWidget(self.scroll)
+
+        # What was sent to the cloud, or "Answered locally": small and gray, only after an answer.
+        self.foot = QLabel()
+        self.foot.setFont(font(8.5))
+        self.foot.setWordWrap(True)
+        outer.addWidget(self.foot)
+
+        # Key moments (at most 3, newest first, one line each, the time in gray). Shown only while
+        # there is no answer on screen; a click asks about that moment. Never a pop-up.
+        self.moments = QLabel()
+        self.moments.setFont(font(9.5))
+        self.moments.setTextFormat(Qt.RichText)
+        self.moments.setTextInteractionFlags(Qt.LinksAccessibleByMouse)
+        self.moments.linkActivated.connect(self._ask_moment)
+        outer.addWidget(self.moments)
 
         # Options (shown by the options button): two short lines of gray text buttons, so they
         # fit in both languages. Activity, pause, quit; then the global shortcut.
@@ -174,9 +194,11 @@ class Edith(QWidget):
         self.btn_hotkey = self._text_button("", self._start_capture)
         self.btn_default = self._text_button(self.agent.t("hotkey_default"), self._restore_default)
         self.btn_default.hide()   # only while a new shortcut is being captured
+        self.btn_local = self._text_button("", self._toggle_local)
         self.text_buttons = (self.btn_activity, self.btn_memory, self.btn_quit, self.btn_hotkey,
-                             self.btn_default)
-        for line in ((self.btn_activity, self.btn_memory, self.btn_quit), (self.btn_hotkey, self.btn_default)):
+                             self.btn_default, self.btn_local)
+        for line in ((self.btn_activity, self.btn_memory, self.btn_quit),
+                     (self.btn_hotkey, self.btn_default), (self.btn_local,)):
             row = QHBoxLayout()
             row.setSpacing(16)
             for b in line:
@@ -226,6 +248,9 @@ class Edith(QWidget):
                                  f" selection-background-color: {pal.accent}; selection-color: {pal.bg}; }}")
         self.status.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.answer.setStyleSheet(f"color: {pal.text}; background: transparent;")
+        self.foot.setStyleSheet(f"color: {pal.muted}; background: transparent;")
+        self.moments.setStyleSheet("background: transparent;")
+        self._render_moments()
         self.scroll.setStyleSheet(
             "QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }"
             "QScrollBar:vertical { background: transparent; width: 6px; margin: 0; }"
@@ -305,6 +330,7 @@ class Edith(QWidget):
         self.expanded = True
         self.content.show()
         self.hover_fx.setOpacity(0.0)
+        self._load_moments()
         self._fit()
         self._fade()
         self.raise_()
@@ -340,6 +366,8 @@ class Edith(QWidget):
         if has_answer:
             self.scroll.setFixedHeight(min(ANSWER_MAX_H, self.answer.heightForWidth(inner - 10) + 14))
         self.status.setVisible(bool(self.status.text()))
+        self.foot.setVisible(has_answer and bool(self.foot.text()))
+        self.moments.setVisible(not has_answer and not self.agent.busy and bool(self._moments))
         lay = self.content.layout()
         h = lay.totalHeightForWidth(w) if lay.hasHeightForWidth() else lay.sizeHint().height()
         self.content.setGeometry(0, 0, w, h)
@@ -362,6 +390,7 @@ class Edith(QWidget):
         if typed and not self.agent.busy:
             self._last_request = typed
             self.answer.setText("")
+            self.foot.setText("")
             self.agent.submit(typed)
             self.field.selectAll()
 
@@ -369,8 +398,48 @@ class Edith(QWidget):
         self.status.setText(line)
         self._fit()
 
+    def _show_footnote(self, line: str) -> None:
+        self.foot.setText(line)
+        self._fit()
+
+    # --- key moments ----------------------------------------------------------------------------
+    def _load_moments(self) -> None:
+        from ..brain.notes import NoteBook
+
+        try:
+            self._moments = NoteBook(self.agent.cfg).moments(limit=3)
+        except Exception:
+            log.debug("could not read the notes", exc_info=True)
+            self._moments = []
+        self._render_moments()
+
+    def _render_moments(self) -> None:
+        from datetime import datetime
+        from html import escape
+
+        from PySide6.QtGui import QFontMetrics
+
+        pal = self.theme.palette
+        metrics = QFontMetrics(self.moments.font())
+        width = PANEL_W - 2 * 22 - metrics.horizontalAdvance("00:00") - 2 * metrics.horizontalAdvance(" ") - 8
+        rows = []
+        for i, m in enumerate(self._moments):
+            when = datetime.fromtimestamp(m["ts"]).strftime("%H:%M")
+            line = metrics.elidedText(f'{self.agent.t("kind_" + m["kind"])} · {m["text"]}', Qt.ElideRight, width)
+            rows.append(f'<a href="{i}" style="color:{pal.text}; text-decoration:none;">'
+                        f'<span style="color:{pal.muted};">{when}</span>&nbsp;&nbsp;{escape(line)}</a>')
+        self.moments.setText("<br>".join(rows))
+
+    def _ask_moment(self, index: str) -> None:
+        from datetime import datetime
+
+        m = self._moments[int(index)]
+        question = self.agent.t("about_moment", time=datetime.fromtimestamp(m["ts"]).strftime("%H:%M"), text=m["text"])
+        self.field.setText(question)
+        self._enter()
+
     def _show_reply(self, reply: str) -> None:
-        self.answer.setText(reply)
+        self.answer.setText(reply.replace("\n", "  \n"))   # Markdown: keep every line break
         self.scroll.verticalScrollBar().setValue(0)
         if self.agent.awaiting and not self.expanded:
             self.expand(activate=False)  # a confirmation is needed: it must be seen
@@ -380,6 +449,15 @@ class Edith(QWidget):
     def _toggle_menu(self, on: bool) -> None:
         self.menu.setVisible(on)
         self._fit()
+
+    def _toggle_local(self) -> None:
+        self.agent.router.local_only = not self.agent.router.local_only
+        self.state["local_only"] = self.agent.router.local_only
+        self._save_state()
+        self._label_local()
+
+    def _label_local(self) -> None:
+        self.btn_local.setText(self.agent.t("local_only_on" if self.agent.router.local_only else "local_only_off"))
 
     def _toggle_memory(self) -> None:
         self.set_memory_on(self.actions.toggle_memory())

@@ -6,6 +6,7 @@ Event shapes:
   {"type": "transcript", "ts", "start", "end", "text", "lang"}
   {"type": "click", "ts", "x", "y", "button", "window", "process", "element"}   # see actions.py
   {"type": "field", "ts", "value", "window", "process", "element"}            # never passwords
+  {"type": "text", "ts", "window", "process", "text"}     # visible window text (UIA), see screentext.py
 
 `ts` is a Unix timestamp (float). Paths are relative to buffer/.
 The file is shared between processes (`run` writes, `ask`/`status` may prune), so every

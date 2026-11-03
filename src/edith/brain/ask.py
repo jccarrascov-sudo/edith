@@ -1,11 +1,21 @@
-"""Build a compact multimodal context from the buffer and ask Muse Spark about it."""
+"""The context for a question about the last minutes: text first, screenshots only if needed.
+
+Cheapest first: the window history, clicks and field values, the audio transcript, the text
+the screen showed (read through UI Automation, sent as diffs: a window's later reads only
+add the lines that changed), and the local model's background notes (block summaries, key
+moments). Screenshots are added only when the question needs to see something, at most
+`cloud.max_images`, downscaled (older ones smaller, or only the region that changed).
+
+Temporal questions are narrowed to the time they ask about, and get the timestamped
+SEQUENCE of what happened there: "what changed in the last 5 minutes?" (first and last
+frames), "what was on screen 5 min ago?" (the frames around then), "summarize between 10:30
+and 10:40". The fixed system prompt goes first and the question last (prompt caching)."""
 
 from __future__ import annotations
 
-import logging
-import sys
+import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from PIL import Image
@@ -14,23 +24,70 @@ from . import tokens
 from ..config import Config
 from ..memory.timeline import Timeline
 
-log = logging.getLogger(__name__)
-
 SYSTEM_PROMPT = """\
 You are Edith, a desktop assistant with a short memory of the user's computer.
-You receive what happened during the last {minutes} minutes:
+You receive what happened during a period of the last {minutes} minutes (or of today, for notes):
 - a window history (which app/window was in front, with local times),
 - the user's clicks (with the UI element under them) and the values text fields settled on,
 - a transcript of the system audio, i.e. what came out of the speakers (videos, calls,
-  music). It is NOT the user's microphone,
-- screenshots, each labeled with its local time and window.
+  classes). It is NOT the user's microphone,
+- the text the screen showed, read from the apps (later reads of a window list only the
+  lines that changed),
+- notes written earlier by a local model: block summaries and key moments,
+- sometimes screenshots, each labeled with its local time and window.
 
 Answer the user's question using only this context.
-- Always say roughly when the things you mention happened, relative to now, and where,
-  e.g. "~4 min ago, in Chrome (YouTube), ...".
+- Say roughly when the things you mention happened, relative to now, and where,
+  e.g. "~4 min ago, in Chrome (YouTube), ...". For "what changed", compare in time order.
 - Transcripts are automatic and may contain errors; screenshots may be downscaled.
 - If the context does not contain the answer, say so briefly instead of guessing.
 - Reply in the same language as the question. Be concise."""
+
+# Questions that need to SEE the screen (layout, colors, pictures, charts), not just its text.
+VISUAL = re.compile(
+    r"\b(look(s|ed)? like|see|seen|show(ed|n)?|screen ?shot|image|picture|photo|chart|graph|diagram|"
+    r"colou?r|layout|icon|logo|drawing|slide|whiteboard|"
+    r"se ve[ií]?a?|ves|vi|viste|mira|pantallazo|captura|imagen|foto|gr[aá]fic[oa]|diagrama|dibujo|"
+    r"color(es)?|diapositiva|pizarra|logo|[ií]cono)\b", re.IGNORECASE)
+CHANGED = re.compile(r"\b(what|que|qué)\b.*\b(changed?|cambi[oó]|cambiaron|different|diferente)\b", re.IGNORECASE)
+AGO = re.compile(r"(\d+)\s*(?:min(?:ute)?s?|minutos?)\s*(?:ago|atr[aá]s)|hace\s+(\d+)\s*(?:min(?:uto)?s?)", re.IGNORECASE)
+LAST = re.compile(r"(?:last|past|[uú]ltimos?)\s+(\d+)\s*(?:min(?:ute)?s?|minutos?)", re.IGNORECASE)
+CLOCK = r"(\d{1,2})[:.h](\d{2})"
+BETWEEN = re.compile(r"(?:between|from|entre|de(?:sde)?)\s+(?:las\s+)?" + CLOCK +
+                     r"\s+(?:and|to|y|a|hasta)\s+(?:las\s+)?" + CLOCK, re.IGNORECASE)
+
+
+@dataclass
+class Focus:
+    """The part of the memory a question is about."""
+    start: float
+    end: float
+    target: float | None = None     # "5 min ago": the moment itself
+    kind: str = "all"               # all | ago | changed | between | last
+    visual: bool = False            # the question needs to see the screen
+
+
+def _clock(now: float, h: str, m: str) -> float:
+    d = datetime.fromtimestamp(now)
+    return d.replace(hour=int(h) % 24, minute=int(m), second=0, microsecond=0).timestamp()
+
+
+def focus(question: str, now: float, retention_s: float) -> Focus:
+    oldest = now - retention_s
+    f = Focus(oldest, now, visual=bool(VISUAL.search(question)))
+    if m := BETWEEN.search(question):
+        a, b = sorted((_clock(now, m.group(1), m.group(2)), _clock(now, m.group(3), m.group(4))))
+        f.start, f.end, f.kind = max(oldest, a), min(now, b + 59), "between"
+    elif m := AGO.search(question):
+        target = now - 60 * int(m.group(1) or m.group(2))
+        f.start, f.end, f.target, f.kind = max(oldest, target - 75), min(now, target + 75), target, "ago"
+        f.visual = True              # "what was on screen 5 min ago" is about what it looked like
+    elif m := LAST.search(question):
+        f.start, f.kind = max(oldest, now - 60 * int(m.group(1))), "last"
+    if CHANGED.search(question):
+        f.kind = "changed"
+        f.visual = True
+    return f
 
 
 def hhmmss(ts: float) -> str:
@@ -66,12 +123,31 @@ def select_frames(frames: list[dict], max_n: int, recent_n: int) -> list[dict]:
     return sorted([*chosen.values(), *recent], key=lambda f: f["ts"])
 
 
+def pick_frames(frames: list[dict], f: Focus, max_n: int) -> list[dict]:
+    """The frames a focused question gets, oldest first (at most max_n)."""
+    if max_n <= 0 or not frames:
+        return []
+    if f.kind == "ago" and f.target is not None:
+        near = sorted(frames, key=lambda fr: abs(fr["ts"] - f.target))[:max(1, max_n - 1)]
+        return sorted(near, key=lambda fr: fr["ts"])
+    if f.kind == "changed":
+        picks = [frames[0], frames[-1]]
+        if max_n >= 3 and len(frames) > 2:
+            picks.insert(1, max(frames[1:-1], key=lambda fr: fr["score"]))
+        return list({fr["path"]: fr for fr in picks}.values())[:max_n]
+    return select_frames(frames, max_n, min(1, max_n))
+
+
 @dataclass
 class ContextOptions:
     """Which token optimizations to apply (all on by default; flags exist to measure each one)."""
     history_scales: list[float] | None = None  # None = every frame at image_width
     diff_crops: bool = True                    # older frames: only the region that changed
     compact_text: bool = True                  # merged transcript + window changes only
+    max_images: int | None = None              # None = ask.max_frames (measurements)
+    image_width: int | None = None             # None = ask.image_width
+    focus: Focus | None = None                 # None = the whole memory
+    notes: list[dict] = field(default_factory=list)
 
     @classmethod
     def from_config(cls, cfg: Config) -> "ContextOptions":
@@ -84,7 +160,7 @@ def frame_parts(cfg: Config, timeline: Timeline, picked: list[dict], now: float,
     images = []
     for f in picked:
         with Image.open(timeline.buffer_path(f["path"])) as img:
-            images.append(tokens.fit_width(img.convert("RGB"), cfg.ask["image_width"]))
+            images.append(tokens.fit_width(img.convert("RGB"), opts.image_width or cfg.ask["image_width"]))
     scales = (tokens.history_scales(len(images), opts.history_scales)
               if opts.history_scales else [1.0] * len(images))
     parts, size = [], 0
@@ -101,7 +177,7 @@ def frame_parts(cfg: Config, timeline: Timeline, picked: list[dict], now: float,
                 img, crop = tokens.crop_with_margin(img, box, margin=24)
                 label += f", only the region that changed since the previous screenshot (box {crop})"
         if newest:
-            label += " [current screen, full resolution]"
+            label += " [newest of these screenshots]"
         b64 = tokens.jpeg_b64(tokens.scale_image(img, scales[i]))
         size += len(b64)
         parts.append({"type": "text", "text": label})
@@ -147,18 +223,73 @@ def action_lines(events: list[dict], now: float, limit: int = 80) -> list[str]:
     return lines[-limit:]
 
 
+def screen_text_lines(events: list[dict], now: float, max_chars: int = 6000) -> list[str]:
+    """Each read of a window's text; later reads of the same window keep only new lines.
+    The newest reads win when the total is too long."""
+    seen: dict[tuple[str, str], set[str]] = {}
+    blocks: list[str] = []
+    for e in events:
+        key = (e["window"], e["process"])
+        lines = [ln for ln in e["text"].splitlines() if ln.strip()]
+        old = seen.setdefault(key, set())
+        new = [ln for ln in lines if ln not in old]
+        old.update(lines)
+        if not new:
+            continue
+        head = f'[{hhmmss(e["ts"])}, {ago(e["ts"], now)}] {e["process"] or "?"}: "{e["window"]}"'
+        head += "" if len(new) == len(lines) else " (new lines only)"
+        blocks.append(head + "\n" + "\n".join("  " + ln for ln in new))
+    out, size = [], 0
+    for b in reversed(blocks):
+        if size + len(b) > max_chars:
+            out.append(f"(older screen text omitted: {len(blocks) - len(out)} reads)")
+            break
+        out.append(b)
+        size += len(b)
+    return list(reversed(out))
+
+
+def note_lines(notes: list[dict], now: float) -> list[str]:
+    lines = []
+    for n in notes:
+        if n["type"] == "summary":
+            lines.append(f'- summary {hhmmss(n["start"])}-{hhmmss(n["end"])}: {n["text"]}')
+        elif n["type"] == "moment":
+            lines.append(f'- key moment {hhmmss(n["ts"])} ({ago(n["ts"], now)}), {n["kind"]}: {n["text"]}')
+    return lines
+
+
 def build_messages(cfg: Config, timeline: Timeline, question: str,
                    opts: ContextOptions | None = None) -> tuple[list[dict], dict]:
     opts = opts or ContextOptions.from_config(cfg)
     now = time.time()
+    f = opts.focus
     events = timeline.read()
+    if f:
+        before = [e for e in events if e.get("end", e["ts"]) < f.start]
+        events = [e for e in events if f.start <= e.get("end", e["ts"]) and e["ts"] <= f.end + 1]
+        if f.kind == "ago":
+            # Frames and screen text are only saved when something changes, so what the screen
+            # showed at that moment is the last frame (and text) saved before it.
+            last = {}
+            for e in before:
+                if e["type"] in ("frame", "text", "window"):
+                    last[e["type"]] = e
+            events = sorted(list(last.values()) + events, key=lambda e: e["ts"])
     windows = [e for e in events if e["type"] == "window"]
     transcripts = [e for e in events if e["type"] == "transcript"]
     actions = [e for e in events if e["type"] in ("click", "field")]
+    texts = [e for e in events if e["type"] == "text"]
     frames = [e for e in events if e["type"] == "frame" and timeline.buffer_path(e["path"]).exists()]
-    picked = select_frames(frames, cfg.ask["max_frames"], cfg.ask["recent_frames"])
+    if opts.max_images is None:
+        picked = select_frames(frames, cfg.ask["max_frames"], cfg.ask["recent_frames"])
+    else:
+        picked = pick_frames(frames, f or Focus(0, now), opts.max_images)
 
-    text = [f"Current local time: {hhmmss(now)}.", "", "Window history (oldest first):"]
+    text = [f"Current local time: {hhmmss(now)}."]
+    if f and f.kind != "all":
+        text.append(f"The question is about {hhmmss(f.start)}-{hhmmss(f.end)}; only that period follows.")
+    text += ["", "Window history (oldest first):"]
     if opts.compact_text:
         text += window_history(windows, now) or ["(none)"]
     else:
@@ -168,11 +299,18 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
     text += action_lines(actions, now) or ["(none)"]
     text += ["", "System audio transcript (oldest first):"]
     text += [f'[{hhmmss(t["start"])}-{hhmmss(t["end"])}, {ago(t["start"], now)}] {t["text"]}'
-             for t in (merge_transcripts(transcripts) if opts.compact_text else transcripts)]         or ["(no speech heard)"]
-    text += ["", f"{len(picked)} screenshots follow, oldest first."]
+             for t in (merge_transcripts(transcripts) if opts.compact_text else transcripts)] or ["(no speech heard)"]
+    screen = screen_text_lines(texts, now)
+    if screen:
+        text += ["", "Screen text (oldest first):"] + screen
+    notes = note_lines(opts.notes, now)
+    if notes:
+        text += ["", "Notes from the local model (today):"] + notes
+    if picked:
+        text += ["", f"{len(picked)} screenshots follow, oldest first."]
 
     content: list[dict] = [{"type": "text", "text": "\n".join(text)}]
-    parts, image_bytes = frame_parts(cfg, timeline, picked, now, opts)
+    parts, image_bytes = frame_parts(cfg, timeline, picked, now, opts) if picked else ([], 0)
     content += parts
     content.append({"type": "text", "text": f"Question: {question}"})
 
@@ -182,48 +320,8 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
     ]
     stats = {"images": sum(p["type"] == "image_url" for p in content), "frames_available": len(frames),
              "transcript_segments": len(transcripts), "window_changes": len(windows),
-             "actions": len(actions),
-             "image_kb": image_bytes // 1024, "context_text": "\n".join(text)}
+             "actions": len(actions), "screen_texts": len(texts),
+             "summaries": sum(n["type"] == "summary" for n in opts.notes),
+             "moments": sum(n["type"] == "moment" for n in opts.notes),
+             "picked": picked, "image_kb": image_bytes // 1024, "context_text": "\n".join(text)}
     return messages, stats
-
-
-def answer(cfg: Config, question: str) -> tuple[str, str]:
-    """Muse Spark's answer about the last minutes, plus a one-line usage report."""
-    from .client import MetaClient
-
-    messages, stats = build_messages(cfg, Timeline(cfg), question)
-    client = MetaClient(cfg)
-    t0 = time.monotonic()
-    response = client.chat(
-        "ask", messages=messages, max_tokens=cfg.ask["max_output_tokens"],
-        reasoning_effort=cfg.ask["reasoning_effort"])
-    text = response.choices[0].message.content or ""
-    report = ""
-    usage = response.usage
-    if usage:
-        details = getattr(usage, "completion_tokens_details", None)
-        reasoning = getattr(details, "reasoning_tokens", None) if details else None
-        cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0
-        report = (f"{client.model}: {usage.prompt_tokens} input tokens ({cached} cached), "
-                  f"{usage.completion_tokens} output tokens"
-                  + (f" ({reasoning} reasoning)" if reasoning else "")
-                  + f", {stats['images']} images, {time.monotonic() - t0:.1f}s, "
-                  f"${response.edith_cost:.4f}. {client.meter.summary()}")
-    return text, report
-
-
-def ask(cfg: Config, question: str, dry_run: bool = False) -> str:
-    """`edith ask`: the same answer, printed (context and usage go to stderr)."""
-    messages, stats = build_messages(cfg, Timeline(cfg), question)
-    print(f"[edith] sending {stats['images']} images ({stats['image_kb']} KB base64, "
-          f"{stats['frames_available']} frames in buffer), {stats['transcript_segments']} "
-          f"transcript segments, {stats['window_changes']} window events, {stats['actions']} actions",
-          file=sys.stderr)
-    if dry_run:
-        print(stats["context_text"])
-        return ""
-    text, report = answer(cfg, question)
-    print(text)
-    if report:
-        print(f"[edith] {report}", file=sys.stderr)
-    return text

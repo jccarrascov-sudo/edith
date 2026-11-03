@@ -43,6 +43,39 @@ allow = ["127.0.0.1", "localhost"]
 [budget]
 session_limit_usd = 5.0   # calls stop when a session costs more than this
 session_idle_hours = 3    # a new session starts after this long without API calls
+monthly_limit_usd = 10.0  # at 80 % the panel warns; at 100 % Edith answers locally only
+warn_at = 0.8
+input_per_m = 1.25        # Muse Spark prices, USD per million tokens
+cached_per_m = 0.15
+output_per_m = 4.25
+
+[cloud]
+# Muse Spark is only called when you ask something. Text goes first (screen text, notes,
+# transcript); screenshots only if the question needs to see something.
+max_images = 3
+image_width = 1024        # the newest screenshot sent; older ones are smaller
+older_image_width = 640
+confirm_images = false    # ask before sending screenshots
+timeout_s = 90
+max_output_tokens = 2000  # includes reasoning tokens
+
+[local]
+# Muse Glimmer 30B through llama.cpp's llama-server (found automatically if installed with
+# winget and downloaded to the Hugging Face cache). Used for background notes and whenever
+# the cloud is not used.
+enabled = true
+gpu_layers = 6            # ~2 GB of VRAM (26 layers: ~6 GB, ~1.6x faster)
+context = 8192
+port = 0                  # 0 = a free port each time
+timeout_s = 120
+
+[notes]
+# Background notes by the local model: block summaries and key moments (slide changes,
+# dates/deadlines/tasks, "this is in the exam"). Local text only, kept keep_hours.
+enabled = true
+summary_minutes = 10
+check_s = 30
+keep_hours = 24
 
 # If the foreground window matches any of these (case-insensitive substring),
 # nothing is captured: no frame, no window title, no process name.

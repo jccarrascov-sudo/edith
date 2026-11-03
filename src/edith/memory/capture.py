@@ -1,4 +1,8 @@
-"""Primary-monitor capture with cheap change detection."""
+"""Primary-monitor capture with cheap change detection.
+
+A frame is kept only when the screen changed significantly: the mean difference of a tiny
+grayscale thumbnail. The taskbar (with its clock) is left out of that comparison, the mouse
+cursor is never in the grab, and small changes stay under the threshold."""
 
 from __future__ import annotations
 
@@ -30,6 +34,22 @@ def change_score(a: np.ndarray | None, b: np.ndarray) -> float:
     return 1.0 if a is None else float(np.mean(np.abs(a - b)))
 
 
+def work_box(monitor: dict) -> tuple[int, int, int, int] | None:
+    """The primary monitor's work area (the screen minus the taskbar) as a crop box of a grab
+    of `monitor`, or None if it cannot be read."""
+    import ctypes
+    from ctypes import wintypes
+
+    rect = wintypes.RECT()
+    if not ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
+        return None
+    box = (rect.left - monitor["left"], rect.top - monitor["top"],
+           rect.right - monitor["left"], rect.bottom - monitor["top"])
+    if box[0] < 0 or box[1] < 0 or box[2] > monitor["width"] or box[3] > monitor["height"]             or box[2] - box[0] < 100 or box[3] - box[1] < 100:
+        return None
+    return box
+
+
 def primary_monitor(sct: mss.base.MSSBase) -> dict:
     # On Windows the primary monitor is the one whose top-left corner is the origin.
     for mon in sct.monitors[1:]:
@@ -55,7 +75,7 @@ class PrivacyGate:
 
 class ScreenCapture:
     def __init__(self, cfg: Config, timeline: Timeline, stop: threading.Event,
-                 gate: PrivacyGate | None = None):
+                 gate: PrivacyGate | None = None, on_frame=None):
         self.cfg = cfg
         self.gate = gate or PrivacyGate(cfg.capture["interval_s"])
         self.c = cfg.capture
@@ -68,6 +88,8 @@ class ScreenCapture:
         self.excluded_ticks = 0
         self.burst_until = 0.0
         self._wake = threading.Event()
+        self.on_frame = on_frame          # called after a frame is kept (screen text reads then)
+        self.box: tuple[int, int, int, int] | None = None
 
     def burst(self, ts: float) -> None:
         """A click happened: capture right away, then every burst_interval_s for burst_s."""
@@ -80,6 +102,7 @@ class ScreenCapture:
     def run(self) -> None:
         with mss.MSS() as sct:
             monitor = primary_monitor(sct)
+            self.box = work_box(monitor)
             log.info("Capturing primary monitor %sx%s every %ss",
                      monitor["width"], monitor["height"], self.c["interval_s"])
             threading.Thread(target=lambda: (self.stop.wait(), self._wake.set()), daemon=True).start()
@@ -114,7 +137,7 @@ class ScreenCapture:
                                   "window": title_after, "process": process_after})
 
         img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
-        thumb = thumbnail(img)
+        thumb = thumbnail(img.crop(self.box) if self.box else img)
         score = change_score(self.last_thumb, thumb)
         idle = now - self.last_saved >= self.c["max_idle_s"]
         if score < self.c["change_threshold"] and not idle:
@@ -132,4 +155,6 @@ class ScreenCapture:
         self.last_thumb = thumb
         self.last_saved = now
         self.saved += 1
+        if self.on_frame:
+            self.on_frame()
         log.debug("Saved %s (score %.3f%s)", name, score, ", idle" if idle and score < self.c["change_threshold"] else "")

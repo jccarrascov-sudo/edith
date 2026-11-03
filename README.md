@@ -10,7 +10,11 @@ error in the terminal 5 minutes ago?"*. Do a task once by hand and say *"do the 
 learns the task from its memory, builds a machine, verifies it against what you did, and
 runs it on the remaining rows after you confirm.
 
-The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
+Two Meta models share the work. **Muse Glimmer 30B** runs on your PC (llama.cpp, ~2 GB of
+VRAM) for background notes and for answers when the cloud is not used; **Muse Spark**
+(`muse-spark-1.3`, Meta Model API) answers only when you ask something, with the cheapest
+context that can answer. *Your screen never leaves your PC. Only what you ask goes to the
+cloud.*
 
 ## The interface
 
@@ -28,14 +32,21 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   at once.
 - **Click** the dot and it opens into a panel with one text field and the answer under it.
   The audio button (system audio on/off) and the options (Activity, Pause memory, Quit,
-  Shortcut)
-  fade in only while the mouse is over the panel. Esc or a click elsewhere closes it back
-  into the dot.
+  Shortcut, Local only) fade in only while the mouse is over the panel. Esc or a click
+  elsewhere closes it back into the dot.
+- **Answers stream** in token by token. Under each one, a small gray line says what was sent
+  (*"Sent: 4 screen texts, 1 summary, 2 transcript lines · $0.0035"*), or *"Answered
+  locally"* (with the reason: no connection, monthly limit reached...). From 80 % of the
+  monthly budget it also says how much is used.
+- **Key moments** (at most 3, one line each, the time in gray) appear under the field when
+  there is no answer on screen: a slide change, a date or deadline, a task, "this is in the
+  exam". A click asks about that moment. There are no pop-ups.
 - **Agent mode** draws nothing on the screen: no overlays, no outlines. Progress is one line
   of gray text in the panel (*"Writing row 3 of 29 in 127.0.0.1:8765…"*). Before sending,
   the panel shows what will be sent (rows, totals, skipped rows); Enter sends, Esc cancels.
-- **Activity** opens a separate view with RAM, VRAM and the memory's activity over the last
-  10 minutes: the number large, a 1.75 px accent sparkline under it for the trend, a faint
+- **Activity** opens a separate view with RAM, VRAM, the memory's activity over the last
+  10 minutes, answer time (cloud and local) and the daily cloud cost (this month's total as
+  the big number): the number large, a 1.75 px accent sparkline under it for the trend, a faint
   fill, no axes, grid or legend; the exact value is in a tooltip under the mouse.
 - **Soft UI**: one flat background color shared by the panel and the buttons; relief comes
   only from two soft shadows (light up-left, dark down-right), inset when pressed; no
@@ -54,7 +65,12 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
                                                                                              ▼
                                               buffer/timeline.jsonl (rolling 10-minute window)
                                                                                              │
- edith ask "..." ◄── Muse Spark ◄── transcript + windows + actions + 8-12 key frames ◄─┘
+ window text after each change (UI Automation, no model) ─────────────────────────────────┤
+                                                                                             │
+ local model (Muse Glimmer, low priority) ──► key moments + block summaries ◄────────────────┤
+                                                                                             │
+ a question ──► text first (+ ≤3 screenshots if it needs to see) ──► Muse Spark ─────────────┘
+              └─► local only / offline / monthly limit ──► Muse Glimmer ("Answered locally")
 ```
 
 - **Capture** saves a frame only when the screen changed (>2% mean difference) or every 30 s.
@@ -69,8 +85,22 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   in `buffer/`, which is git-ignored and pruned continuously to the last 10 minutes.
 - **Audio** is the system output (what you hear), not your microphone. Silent blocks are
   skipped; whisper is loaded only when there is something to transcribe.
-- **Ask** sends the transcript, a compact window history and the most informative frames
-  (highest change per time slice + the most recent ones), and prints the tokens spent.
+- **Screen text**: after each significant change, the text of the window in front is read
+  through UI Automation (like a screen reader; no OCR, no model, never password fields) and
+  kept when it changed. Change detection ignores the taskbar (its clock) and the cursor.
+- **Ask** is text first: window history, clicks and field values, the transcript, the screen
+  text (later reads only add the lines that changed) and the local model's notes.
+  Screenshots are added only when the question needs to see something (at most 3, the
+  older ones smaller or cropped to what changed). Temporal questions are narrowed to the
+  period they name and get its timestamped sequence: *"what changed in the last 5
+  minutes?"*, *"what was on screen 5 min ago?"* (the last frame saved before then, since
+  frames are only saved on change), *"summarize between 10:30 and 10:40"*.
+- **Hybrid engine**: Muse Spark only when you ask. Muse Glimmer (local) writes key moments
+  (a no-model filter first, so it runs rarely) and a short summary of each 10-minute block,
+  always after any question, and answers when "Local only" is on, without internet, on an
+  API error or once the monthly limit is reached. A watchdog restarts it if it stops; the
+  server is tied to Edith's process, so it never outlives it. Costs per question, day and
+  month are in `state/costs.jsonl`; the monthly limit is in `config.toml`.
 - **Token efficiency**: decreasing resolution for older frames, crops of known elements,
   compressed UI Automation text when it is cheaper than pixels, and history sent as
   differences. Measured with the official token counter: a real `ask` went from 11,281 to
@@ -82,6 +112,9 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
 py -3.12 -m venv .venv
 .venv\Scripts\python -m pip install -e .
 copy .env.example .env   # then put your Meta Model API key in MODEL_API_KEY
+# Optional local model (~13 GB): llama.cpp and Muse Glimmer 30B (2-bit) with its vision projector
+winget install ggml.llamacpp
+.venv\Scripts\hf download unsloth/Muse-Glimmer-30B-GGUF Muse-Glimmer-30B-UD-Q2_K_XL.gguf mmproj-kquant.gguf
 ```
 
 ## Usage
@@ -91,7 +124,9 @@ copy .env.example .env   # then put your Meta Model API key in MODEL_API_KEY
 .venv\Scripts\edith                             # the same, from a console
 .venv\Scripts\python -m edith run              # memory only, Ctrl+C to stop
 .venv\Scripts\python -m edith ask "what was the video about?"
-.venv\Scripts\python -m edith ask "..." --dry-run   # show the context, no API call
+.venv\Scripts\python -m edith ask "..." --dry-run   # show the context, no model call
+.venv\Scripts\python -m edith ask "..." --local     # answer with the local model only ($0)
+.venv\Scripts\python -m edith cost                  # session and month cost
 .venv\Scripts\python -m edith status
 .venv\Scripts\python -m edith do "what I did 3 minutes ago, do it with the rest"
 .venv\Scripts\python -m unittest discover -s tests       # tests
@@ -260,6 +295,12 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Pre-commit hook and privacy-guard GitHub Action | done |
 | Minimal soft-UI interface: dot, one-field panel, agent status line, confirm with Enter/Esc | done |
 | Global shortcut (default Ctrl+Alt+E), customizable from the panel; dimmer dot while paused | done |
+| Screen text through UI Automation after each change; change detection without the taskbar clock | done |
+| Hybrid engine: local Muse Glimmer (watchdog, warm-up, streaming, tied to Edith's process) + Muse Spark only on questions | done |
+| Text-first context, temporal focus (minutes ago / what changed / between), at most 3 screenshots | done |
+| Key moments and block summaries in the background; at most 3 moments in the panel | done |
+| Cost per question/day/month, monthly limit (80 % warning, 100 % local), "Local only", "Sent: ..." line | done |
+| Activity: answer time and daily cost sparklines | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |
 | Compile down: network level learned from the verified machine's own request in the sandbox (allow-listed domains), verified by equivalence | done |
@@ -287,6 +328,8 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | [Playwright](https://github.com/microsoft/playwright-python) (+ Chromium) | Driving the browser in fabricated tools | Apache-2.0 |
 | [meta-sam-parser](https://dev.meta.ai/) (Meta) | Building SAM 3.1 box/point prompts and decoding its masks | SAM License |
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
+| [Muse Glimmer 30B](https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF) (Meta; GGUF by Unsloth) | Local model: notes, offline answers (downloaded, not in the repo) | Apache-2.0 |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | Runs the local model (installed with winget, not in the repo) | MIT |
 | SAM 3.1 via the Meta Model API | Segmenting UI elements (remote API) | Meta terms |
 | Muse Image via the Meta Model API | Only checked by `scripts/test_api.py`; not used by the app | Meta terms |
 | [PySide6-Essentials](https://doc.qt.io/qtforpython-6/) (Qt for Python) | The dot, the panel and the activity view (drawn with QPainter) | LGPL-3.0 |

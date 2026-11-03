@@ -177,3 +177,38 @@ def address_bar_url(hwnd: int, budget_s: float = 0.6) -> str | None:
         except Exception:
             continue
     return None
+
+
+TEXT_KINDS = {"TextControl", "HeaderControl", "HeaderItemControl", "DocumentControl", "EditControl",
+              "HyperlinkControl", "ListItemControl", "DataItemControl"}   # buttons and tabs are mostly app chrome
+
+
+def visible_text(hwnd: int, max_chars: int = 4000, max_elements: int = 600, budget_s: float = 1.5) -> str:
+    """The readable text of a window, top to bottom as UIA lists it: labels, headings, cell and
+    field values (never a password field's). Repeated lines are dropped. No model is involved."""
+    root = auto.ControlFromHandle(hwnd)
+    if root is None:
+        return ""
+    deadline = time.monotonic() + budget_s
+    lines: list[str] = []
+    seen: set[str] = set()
+    size = 0
+    for n, (control, _depth) in enumerate(auto.WalkControl(root, includeTop=False, maxDepth=40)):
+        if n >= max_elements or size >= max_chars or time.monotonic() > deadline:
+            break
+        try:
+            if control.ControlTypeName not in TEXT_KINDS or control.IsOffscreen:
+                continue
+            if control.GetPropertyValue(auto.PropertyId.IsPasswordProperty):
+                continue
+            name = re.sub(r"\s+", " ", control.Name or "").strip()
+            value = _value(control) if control.ControlTypeName == "EditControl" else None
+            for text in (name, (value or "").strip()):
+                if len(text) < 2 or text in seen:
+                    continue
+                seen.add(text)
+                lines.append(text)
+                size += len(text) + 1
+        except Exception:
+            continue
+    return "\n".join(lines)[:max_chars]

@@ -63,6 +63,29 @@ TEXT = {
         "hotkey_taken": "{combo} is already used by another app. Keeping {old}.",
         "hotkey_saved": "Shortcut: {combo}.",
         "hotkey_default": "Default",
+        "sent": "Sent: {what} · {cost}",
+        "sent_screen_texts": "{n} screen texts", "sent_screen_texts_1": "1 screen text",
+        "sent_summaries": "{n} summaries", "sent_summaries_1": "1 summary",
+        "sent_moments": "{n} key moments", "sent_moments_1": "1 key moment",
+        "sent_transcripts": "{n} transcript lines", "sent_transcripts_1": "1 transcript line",
+        "sent_screenshots": "{n} screenshots", "sent_screenshots_1": "1 screenshot",
+        "sent_windows": "the window history",
+        "budget_warn": " · {pct} % of this month's budget",
+        "answered_locally": "Answered locally",
+        "why_local_only": "",
+        "why_budget": "monthly limit reached",
+        "why_session_brake": "session limit reached",
+        "why_no_key": "no API key",
+        "why_offline": "no connection",
+        "no_local": "I can't answer right now: the cloud is not available ({why}) and the local model is not ready.",
+        "local_restarting": "The local model stopped; restarting it…",
+        "local_restarted": "The local model is back.",
+        "confirm_images": "This question needs {n} screenshots. Send them to Muse Spark?\nEnter to send · Esc for text only",
+        "local_only_on": "Local only: on",
+        "local_only_off": "Local only: off",
+        "kind_slide": "Slide", "kind_deadline": "Date", "kind_task": "Task", "kind_exam": "Important",
+        "about_moment": "What happened at {time} ({text})?",
+        "privacy": "Your screen never leaves your PC. Only what you ask goes to the cloud.",
     },
     "es": {
         "placeholder": "Pregunta por los últimos 10 minutos, o di “haz el resto”",
@@ -101,6 +124,29 @@ TEXT = {
         "hotkey_taken": "Otra app ya usa {combo}. Se mantiene {old}.",
         "hotkey_saved": "Atajo: {combo}.",
         "hotkey_default": "Por defecto",
+        "sent": "Enviado: {what} · {cost}",
+        "sent_screen_texts": "{n} textos de pantalla", "sent_screen_texts_1": "1 texto de pantalla",
+        "sent_summaries": "{n} resúmenes", "sent_summaries_1": "1 resumen",
+        "sent_moments": "{n} momentos clave", "sent_moments_1": "1 momento clave",
+        "sent_transcripts": "{n} líneas de audio", "sent_transcripts_1": "1 línea de audio",
+        "sent_screenshots": "{n} capturas", "sent_screenshots_1": "1 captura",
+        "sent_windows": "el historial de ventanas",
+        "budget_warn": " · {pct} % del presupuesto del mes",
+        "answered_locally": "Respondido localmente",
+        "why_local_only": "",
+        "why_budget": "límite mensual alcanzado",
+        "why_session_brake": "límite de la sesión alcanzado",
+        "why_no_key": "sin clave de API",
+        "why_offline": "sin conexión",
+        "no_local": "No puedo responder ahora: la nube no está disponible ({why}) y el modelo local no está listo.",
+        "local_restarting": "El modelo local se detuvo; reiniciándolo…",
+        "local_restarted": "El modelo local volvió.",
+        "confirm_images": "Esta pregunta necesita {n} capturas. ¿Enviarlas a Muse Spark?\nEnter para enviar · Esc para solo texto",
+        "local_only_on": "Solo local: sí",
+        "local_only_off": "Solo local: no",
+        "kind_slide": "Diapositiva", "kind_deadline": "Fecha", "kind_task": "Tarea", "kind_exam": "Importante",
+        "about_moment": "¿Qué pasó a las {time} ({text})?",
+        "privacy": "Tu pantalla nunca sale de tu PC. Solo lo que preguntas va a la nube.",
     },
 }
 
@@ -156,10 +202,13 @@ def duration(seconds: float) -> str:
 
 class Agent(QObject):
     status = Signal(str)      # the one gray line ("" clears it)
-    reply = Signal(str)       # the answer under the text field
+    reply = Signal(str)       # the answer under the text field (repeated while it streams)
+    footnote = Signal(str)    # gray line under the answer: what was sent, or "Answered locally"
     busy_changed = Signal(bool)
 
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, local=None):
+        from ..brain.answer import Router
+
         super().__init__()
         self.cfg = cfg
         self.lang = cfg.ui.get("language", "en")
@@ -167,6 +216,7 @@ class Agent(QObject):
         self.awaiting = False                  # a confirmation is on screen
         self._decision = threading.Event()
         self._confirmed = False
+        self.router = Router(cfg, local, self.t)
 
     def t(self, key: str, **kw) -> str:
         return text(self.lang, key, **kw)
@@ -177,6 +227,7 @@ class Agent(QObject):
         if not request or self.busy:
             return
         target = self._task if is_task(request) else self._ask
+        self.footnote.emit("")
         self._set_busy(True)
         threading.Thread(target=self._guarded, args=(target, request), daemon=True).start()
 
@@ -202,14 +253,33 @@ class Agent(QObject):
             self._set_busy(False)
 
     def _ask(self, question: str) -> None:
-        from ..brain.ask import answer
-
         self.status.emit(self.t("thinking"))
-        Timeline(self.cfg).prune()
-        reply, report = answer(self.cfg, question)
-        if report:
-            log.info(report)
-        self.reply.emit(reply.strip())
+        streamed = {"text": "", "shown": 0.0}
+
+        def on_token(piece: str) -> None:
+            if not streamed["text"]:
+                self.status.emit("")
+            streamed["text"] += piece
+            now = time.monotonic()
+            if now - streamed["shown"] > 0.12:          # repaint at most ~8 times a second
+                streamed["shown"] = now
+                self.reply.emit(streamed["text"].strip())
+
+        answer = self.router.respond(question, on_token=on_token, confirm_images=self._confirm_images)
+        self.reply.emit(answer.text)
+        self.footnote.emit(answer.footnote)
+
+    def _confirm_images(self, n: int) -> bool:
+        """Ask before screenshots go to the cloud (only if cloud.confirm_images is on)."""
+        self._decision.clear()
+        self.awaiting = True
+        self.status.emit("")
+        self.reply.emit(self.t("confirm_images", n=n))
+        self._decision.wait()
+        self.awaiting = False
+        self.reply.emit("")
+        self.status.emit(self.t("thinking"))
+        return self._confirmed
 
     def _task(self, request: str) -> None:
         from ..learn import plan as plan_mod

@@ -158,3 +158,49 @@ Muse Glimmer 30B UD-Q2_K_XL (llama.cpp b11515, Vulkan, RTX 5050 8 GB, 16 GB RAM)
   the GPU failed at 26 layers ("failed to process mtmd chunk", out of VRAM).
 - Decision: default 6 GPU layers (~2 GB VRAM, about 1.6x slower than 6 GB), vision encoder
   on the CPU; images only in low-priority background batches.
+
+## Final version, Phase 3 - Memory and performance, hybrid engine (Nov 3)
+- Screen text (`memory/screentext.py`): after each kept frame, the foreground window's text
+  is read through UI Automation (labels, headings, cells, field values; never passwords,
+  never excluded apps or Edith itself) and logged when it changed. Real 90 s run: 16 reads
+  (Edge, Terminal, Spotify...), 0.3 s per read on a Gmail page. Buttons/tabs were dropped
+  after the first try (browser chrome like "Minimize", "Back").
+- Change detection now ignores the taskbar (work area only), so the clock does not create
+  frames; the cursor was never in the grab.
+- Local engine (`brain/local.py`): llama-server with 6 GPU layers, answer channel opened
+  directly, warm-up at start (ready in 11-29 s), streaming, timeouts, background jobs wait
+  for questions. Watchdog: server killed -> question waited and answered in 4.2 s with a new
+  process. Two real bugs found and fixed: (1) a server orphaned by a crashed test survived
+  and (2) the next run adopted it because it answered on the same port. Now every start
+  uses a free port and the server is in a Windows job object, so it dies with Edith even on
+  a crash (checked with os._exit: 0 servers left).
+- Context (`brain/ask.py`): text first; screen text sent as diffs; temporal focus parsed
+  from the question (N min ago, last N minutes, what changed, between HH:MM and HH:MM, in
+  English and Spanish); screenshots only if the question needs to see (max 3, older ones
+  640 px). "5 min ago" gets the last frame saved before then (found live: the first version
+  sent no screenshot because no frame was saved inside the window).
+- Router (`brain/answer.py`): cloud only on questions; local when "Local only", no
+  connection, no key, session brake or monthly limit; gray line with what was sent or
+  "Answered locally · reason"; 80 % warning; ledger with latency for both.
+- Notes (`brain/notes.py`): no-model filter -> Glimmer classifies -> key moments; slide
+  changes without a model; 10-minute block summaries (cut to whole sentences: Glimmer
+  ignored the 50-word limit).
+- Panel: streamed answers (Markdown rendered), footnote, 3 key moments (click = ask), Local
+  only toggle; Activity: answer time + daily cost cards.
+- Live acceptance (isolated EDITH_HOME, a lecture + real Invoice Portal screenshots, real
+  models):
+
+  | Case | Who answered | Time | Cost | Result |
+  |---|---|---|---|---|
+  | Key moments (filter + Glimmer) | local | 23.7 s | $0 | slide, exam (Nov 13), homework 4 due Monday: 3/3 |
+  | Block summary | local | 48-53 s | $0 | correct facts, too long (now cut) |
+  | "When is the final exam... due Monday?" | Muse Spark, text only | 8.6 s | $0.0035 | correct |
+  | "What changed in the portal in the last 7 minutes?" | Muse Spark + 1 screenshot | 11.8 s | $0.0067 | correct (client, amount) |
+  | "What was on screen 6 min ago?" (after the fix) | Muse Spark + 1 screenshot | 12.5 s | $0.0066 | correct |
+  | Same exam question, Local only | Glimmer | 27.4 s | $0 | correct |
+  | No connection (bad API URL) | Glimmer | 44.6 s | $0 | correct, "Answered locally · no connection" |
+  | Monthly limit reached | Glimmer | 15.7 s | $0 | correct, "· monthly limit reached" |
+
+- Tests: 27 new (focus parsing, frame picks, diffs, ledger, moments, routing with fakes,
+  prompt injection guard): 141 pass.
+

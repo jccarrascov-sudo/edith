@@ -15,7 +15,7 @@ from ctypes import wintypes
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import QHBoxLayout, QToolTip, QWidget
+from PySide6.QtWidgets import QGridLayout, QToolTip, QWidget
 
 from ..config import Config
 from .theme import Theme, raised
@@ -190,11 +190,21 @@ class StatsView(QWidget):
         self.activity = Card(theme, "Actividad · 10 min" if es else "Activity · 10 min",
                              lambda v: f"{sum(c for _, c in self.activity.series):.0f}",
                              lambda ts, v: (f"{v:.0f} eventos · {ago(ts)}" if es else f"{v:.0f} events · {ago(ts)}"))
-        layout = QHBoxLayout(self)
+        from datetime import datetime
+
+        from ..brain.client import Ledger
+
+        self.ledger = Ledger()
+        self.latency = Card(theme, "Tiempo de respuesta" if es else "Answer time", lambda v: f"{v:.1f} s",
+                            lambda ts, v: f"{v:.1f} s · {ago(ts)}")
+        self.cost = Card(theme, "Costo · este mes" if es else "Cost · this month",
+                         lambda v: f"${self.ledger.month_total():.2f}",
+                         lambda ts, v: f"{datetime.fromtimestamp(ts):%d/%m} · ${v:.4f}")
+        layout = QGridLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(0)
-        for card in (self.activity, self.ram, self.vram):
-            layout.addWidget(card)
+        for i, card in enumerate((self.activity, self.ram, self.vram, self.latency, self.cost)):
+            layout.addWidget(card, i // 3, i % 3)
         self.timer = QTimer(self, interval=SAMPLE_S * 1000, timeout=self.refresh)
         theme.changed.connect(self.update)
 
@@ -206,6 +216,9 @@ class StatsView(QWidget):
         self.activity.set_series([(ts, float(c)) for ts, c in bins] if any(c for _, c in bins) else [])
         self.ram.set_series(list(self.sampler.ram))
         self.vram.set_series(list(self.sampler.vram))
+        self.latency.set_series(self.ledger.latencies())
+        daily = self.ledger.daily(30)
+        self.cost.set_series(daily if any(v for _, v in daily) else [])
         self.adjustSize()
 
     def open_near(self, anchor) -> None:

@@ -73,6 +73,20 @@ class PaletteTests(unittest.TestCase):
         self.assertTrue(200 <= theme.THEME_FADE_MS <= 300)
 
 
+class RepeatDetectionTests(unittest.TestCase):
+    def test_asking_to_repeat_an_action_is_a_task(self):
+        for q in ("repite lo que hice", "hazlo otra vez", "vuelve a hacerlo", "haz lo mismo",
+                  "¿puedes hacerlo otra vez?", "do that again", "repeat what I just did", "can you do it again?",
+                  "redo it", "realiza lo que hice hace un momento"):
+            self.assertTrue(agent.is_task(q), q)
+
+    def test_questions_about_it_are_not(self):
+        for q in ("¿qué hice hace un momento?", "what did I do?", "haz un resumen de esto",
+                  "do you remember what the teacher said about it?", "explícame esto", "¿cómo repito esto?",
+                  "pon esto en mis apuntes"):
+            self.assertFalse(agent.is_task(q), q)
+
+
 class TaskDetectionTests(unittest.TestCase):
     def test_tasks_go_to_agent_mode(self):
         for request in ("do the rest", "Do it", "haz el resto", "hazlo", "do the same with the others",

@@ -362,3 +362,11 @@ The user asked that Edith keep "any important detail" of the day, and that impor
 - Tests: 8 new (intents, the hidden token never shown, chat sends no memory, escalation,
   screen doubt gets the frame, guide prompt): 181 pass.
 
+
+## Fix (Nov 3): asking to repeat an action only described it
+- Reported by the user: "do what I just did" got a description. Only "do the rest"-style phrases
+  reached agent mode; "repite lo que hice", "hazlo otra vez", "vuelve a hacerlo", "do that again",
+  "can you do it again?" fell through to memory questions. The task detector now covers them
+  (polite forms included; a sentence with "?" or starting with "did I/do you" stays a question).
+- Plain-language replies when it cannot be repeated: no form filled in the last minutes (and
+  what Edith can repeat today), the spreadsheet is not open, or no row matches. 183 tests pass.

@@ -30,7 +30,13 @@ TEXT = {
         "placeholder": "Ask about your day, or say “do the rest”",
         "thinking": "Thinking…",
         "rewinding": "Looking through the last minutes…",
-        "no_demo": "I don't see a form you filled in the last {minutes} minutes. Do one by hand, then ask me again.",
+        "no_demo": "I can repeat a form you filled from a spreadsheet, and I don't see one in the last {minutes} "
+                   "minutes. Fill one by hand, then ask me again. For anything else, I can tell you what you did, "
+                   "but I can't repeat it yet.",
+        "repeat_no_sheet": "I saw what you filled in, but not the spreadsheet it came from. Open the sheet with the "
+                           "rest of the rows in Excel, then ask me again.",
+        "repeat_no_row": "I saw what you filled in, but no row of the open spreadsheet matches it. Is the right "
+                         "sheet open?",
         "planning": "Working out the steps…",
         "building": "Building and checking it against what you did…",
         "checking": "Checking “{name}” against its proof…",
@@ -131,7 +137,13 @@ TEXT = {
         "placeholder": "Pregunta por tu día, o di “haz el resto”",
         "thinking": "Pensando…",
         "rewinding": "Revisando los últimos minutos…",
-        "no_demo": "No veo un formulario que hayas llenado en los últimos {minutes} minutos. Haz uno a mano y vuelve a pedírmelo.",
+        "no_demo": "Puedo repetir un formulario que llenaste desde una hoja de cálculo, y no veo ninguno en los "
+                   "últimos {minutes} minutos. Llena uno a mano y vuelve a pedírmelo. Otras acciones te las puedo "
+                   "describir, pero todavía no repetir.",
+        "repeat_no_sheet": "Vi lo que llenaste, pero no la hoja de cálculo de donde salió. Abre en Excel la hoja con "
+                           "el resto de filas y vuelve a pedírmelo.",
+        "repeat_no_row": "Vi lo que llenaste, pero ninguna fila de la hoja abierta coincide. ¿Está abierta la hoja "
+                         "correcta?",
         "planning": "Entendiendo los pasos…",
         "building": "Construyendo y comprobando contra lo que hiciste…",
         "checking": "Comprobando “{name}” con su prueba…",
@@ -234,7 +246,16 @@ TEXT = {
 TASK = re.compile(
     r"\b(do|finish|repeat|fill|send|enter)\b.*\b(rest|others?|remaining|all|same|them)\b"
     r"|\b(haz|hazlo|hazme|termina|repite|llena|completa|env[ií]a|ingresa)\b.*\b(resto|dem[aá]s|otr[oa]s|tod[oa]s|mismo|ellas|ellos)\b"
-    r"|^\s*(do it|do the rest|hazlo|haz el resto)\s*[.!]*\s*$", re.IGNORECASE)
+    r"|^\s*(do it|do the rest|hazlo|haz el resto)\s*[.!]*\s*$"
+    # "do that again", "repeat what I just did", "hazlo otra vez", "repite lo que hice", "vuelve a hacerlo"
+    r"|\b(do|redo|repeat|perform|run)\b.*\b(again|once more|what i (just )?did)\b"
+    r"|\b(haz|hazlo|hazme|hacer(lo)?|rep[ií]te(lo)?|repetir(lo)?|realiza(lo)?|ejecuta(lo)?)\b.*\b(otra vez|de nuevo|nuevamente|"
+    r"lo que hice|lo que acabo de hacer|igual)\b"
+    r"|\bvuelve a (hacer|repetir|llenar|enviar)\w*|^\s*rep[ií]te(lo)?\b|^\s*(repeat|redo)\b", re.IGNORECASE)
+POLITE = re.compile(r"^\s*[¿¡]?\s*(can|could|would|will) you\s+|^\s*[¿¡]?\s*(puedes|podr[ií]as|me puedes|me podr[ií]as)\s+",
+                    re.IGNORECASE)
+NOT_A_TASK = re.compile(r"^\s*(do (you|i|we|they)|does|did|is|are|was|were)\b|^\s*[¿¡]?\s*(what|when|where|who|why|how|which|qu[eé]|cu[aá]ndo|d[oó]nde|qui[eé]n|"
+                        r"por ?qu[eé]|c[oó]mo|cu[aá]l)\b", re.IGNORECASE)
 
 
 def text(lang: str, key: str, **kw) -> str:
@@ -245,7 +266,15 @@ UNDO = re.compile(r"^\s*(undo|undo (it|that|the last edit)|deshaz(lo)?|deshacer)
 
 
 def is_task(request: str) -> bool:
-    return bool(TASK.search(request))
+    """An order to do or repeat something (agent mode), also asked politely ("can you do it
+    again?"); a question about it ("what did I do?") is not one."""
+    plain = POLITE.sub("", request)
+    asked = "?" in plain or "¿" in plain
+    m = NOT_A_TASK.search(plain)
+    if m and (asked or m.group(1)):          # "what did I do?", "did I...": questions, not orders
+        return False
+    return bool(TASK.search(plain))
+
 
 
 def origin(url: str | None) -> str:
@@ -473,7 +502,12 @@ class Agent(QObject):
                 return
         else:
             self.status.emit(self.t("planning"))
-            plan = plan_mod.make_plan(self.cfg, demo, request, events, log_fn=log.debug)   # holds row data
+            try:
+                plan = plan_mod.make_plan(self.cfg, demo, request, events, log_fn=log.debug)   # holds row data
+            except plan_mod.LearnError as exc:
+                why = "no_sheet" if "spreadsheet" in str(exc) else "no_row" if "matches" in str(exc) else ""
+                self.reply.emit(self.t(f"repeat_{why}") if why else self.t("cant_build", error=str(exc)))
+                return
             plan_mod.save_plan(plan)
             self.status.emit(self.t("building"))
             try:

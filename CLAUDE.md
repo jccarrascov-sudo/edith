@@ -103,6 +103,10 @@ needed at that moment, it is not shown.
   light (text in accent: #2A55F9, 4.6:1) / #7AA7FF dark; every text >= 4.5:1 (tested). Panel:
   equal 24 px inner margins, one text axis, opens centered on the dot, kept on screen.
   Screenshots + centers: capturas-ui/ (local).
+- Aesthetics (user, Nov 3): "Apple standards", a visual delight; shadows must be soft and thin
+  (real Gaussian blur, tinted, low opacity), harmonious colors, and NO cost or technical details
+  in the panel (they live in Activity; `[ui] show_details` restores them). Every change is
+  checked on screenshots in both themes before it is called done.
 - Charts only where there is data, in a separate view (Activity: RAM, VRAM, memory activity
   in the last 10 min): 1.5-2 px accent sparkline, no axes/grid/legend, at most a 10-15 %
   fill under the line, the important number large on top, exact values only in a tooltip.

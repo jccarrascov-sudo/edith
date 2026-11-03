@@ -327,3 +327,19 @@ The user asked that Edith keep "any important detail" of the day, and that impor
   window appeared. Found in state/logs/edith.log (the Phase 5 rotating log). Fixed, with a test that
   starts Edith with no console; hotkey tests now use their own combination, since a running Edith
   owns Ctrl+Alt+E. A desktop shortcut (with an icon drawn by code) was created for the user.
+
+## Aesthetic pass (Nov 3, user's request: "Apple standards", softer shadows, no cost in the panel)
+- Shadows were ~13 stacked rounded outlines per side, which looked thick and banded. They are now
+  real Gaussian blurs (three box blurs in numpy, rendered once per size and cached), tinted
+  with the background's hue (light #8D99B2 at 32 %, dark #191B1F at 70 %), plus a one-pixel rim
+  of light along the top edge and a faint vertical sheen. Window margins follow the new extent.
+- The panel no longer shows what was sent or what it cost ([ui] show_details, off by default;
+  the ledger and Activity keep both). Key moments drop their kind labels: the words, and the time
+  quietly on the right.
+- Audio and options moved inside the field's right end (the reserved hover row left ~70 px of
+  empty space at the bottom); options are one grouped column; answers are typeset from Markdown
+  with a generous line height (Qt's 140 % looked double-spaced on screenshots: 125 % is used);
+  Activity is one surface instead of reliefs inside a relief.
+- Checked on screenshots in both themes (capturas-ui/); centers still coincide (dot window 86x86,
+  circle = dot = (43, 43), centroid of the dot's pixels (43.0, 43.0)). Tests: 173 pass.
+

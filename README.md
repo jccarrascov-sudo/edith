@@ -31,13 +31,14 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   refused (the old one stays), and *Default* restores Ctrl+Alt+E. It is saved and applied
   at once.
 - **Click** the dot and it opens into a panel with one text field and the answer under it.
-  The audio button (system audio on/off) and the options (Activity, Pause memory, Quit,
-  Shortcut, Local only) fade in only while the mouse is over the panel. Esc or a click
-  elsewhere closes it back into the dot.
-- **Answers stream** in token by token. Under each one, a small gray line says what was sent
-  (*"Sent: 4 screen texts, 1 summary, 2 transcript lines · $0.0035"*), or *"Answered
-  locally"* (with the reason: no connection, monthly limit reached...). From 80 % of the
-  monthly budget it also says how much is used.
+  The audio and options glyphs sit inside the field's right end, like the icons of a search
+  field, and fade in only while the mouse is over the panel; the options open as one quiet
+  column (Activity, Pause memory, Local only, Presentation mode; the shortcut; Delete
+  everything, Quit). Esc or a click elsewhere closes it back into the dot.
+- **Answers stream** in token by token, typeset for reading (generous line height, Markdown
+  bold and lists). The panel shows nothing the user did not ask for: what was sent and its
+  cost are kept in the ledger and the Activity view (`[ui] show_details = true` puts them
+  back under each answer).
 - **Edit from memory** (the star feature): *"put in my notes what the teacher explained"*,
   *"reply to this email with the data I saw earlier"*. Edith takes the field you were in
   when you opened it (Ctrl+Alt+E, or a click on the dot, which does not steal the focus),
@@ -50,7 +51,7 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
 - **Presentation mode** (off by default, Ctrl+Alt+P or the options): a soft accent outline
   around the field Edith is writing into, for demos. It is the only thing Edith ever draws
   over other apps, and it never takes the focus or a click.
-- **Key moments** (at most 3, one line each, the time in gray) appear under the field when
+- **Key moments** (at most 3, one line each, the time quiet on the right) appear under the field when
   there is no answer on screen: a slide change, a date or deadline, a task, "this is in the
   exam". A click asks about that moment. There are no pop-ups.
 - **Agent mode** draws nothing on the screen: no overlays, no outlines. Progress is one line
@@ -61,8 +62,10 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   the big number): the number large, a 1.75 px accent sparkline under it for the trend, a faint
   fill, no axes, grid or legend; the exact value is in a tooltip under the mouse.
 - **Soft UI**: one flat background color shared by the panel and the buttons; relief comes
-  only from two soft shadows (light up-left, dark down-right, same offset and blur), inset
-  when pressed; the closed dot has a centered, symmetric glow instead. Every window keeps a
+  only from two soft shadows (light up-left, dark down-right, same offset and blur), real
+  Gaussian blurs tinted with the background's own hue, plus a one-pixel rim of light along the
+  top edge and a faint sheen; the field is pressed in gently; the closed dot has a centered,
+  symmetric glow instead. Every window keeps a
   transparent margin of offset + blur on all four sides, so no shadow is ever cut. No borders
   or dividers, 16-24 px corners, one accent color, everything else gray.
 - **Type and color**: one typeface, Source Serif 4 (bundled, SIL OFL), 400 for text and 600

@@ -34,6 +34,7 @@ reasoning_effort = "low"   # minimal | low | medium | high | xhigh | max
 
 [ui]
 language = "en"           # en | es (neutral Spanish): the panel's texts
+show_details = false      # true: under each answer, what was sent and its cost (always in Activity)
 
 [network]
 # Sites where a machine may skip the browser and send the form's request directly (its

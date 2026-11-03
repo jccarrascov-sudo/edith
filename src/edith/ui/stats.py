@@ -18,12 +18,13 @@ from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath
 from PySide6.QtWidgets import QGridLayout, QToolTip, QWidget
 
 from ..config import Config
-from .theme import Theme, raised
+from .theme import Theme, raised, shadow_extent
 from .fonts import BIG_PX, SEMIBOLD, SMALL_PX, font
 
 SAMPLE_S = 5
-MARGIN = 18          # room for the soft shadows around each card
+MARGIN = 6           # space around each metric inside the one surface
 CARD_W, CARD_H = 196, 132
+DEPTH = 6            # the one surface's relief
 
 
 # --- data ---------------------------------------------------------------------------------------
@@ -124,7 +125,6 @@ class Card(QWidget):
         pal = self.theme.palette
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        raised(p, QRectF(MARGIN, MARGIN, CARD_W, CARD_H), 20, pal, depth=6)
         p.setPen(QColor(pal.muted))
         p.setFont(font(SMALL_PX))
         p.drawText(QRectF(MARGIN + 18, MARGIN + 14, CARD_W - 36, 18), Qt.AlignLeft, self.label)
@@ -200,7 +200,8 @@ class StatsView(QWidget):
                          lambda v: f"${self.ledger.month_total():.2f}",
                          lambda ts, v: f"{datetime.fromtimestamp(ts):%d/%m} · ${v:.4f}")
         layout = QGridLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
+        m = int(shadow_extent(DEPTH)) + 1 + 14
+        layout.setContentsMargins(m, m, m, m)
         layout.setSpacing(0)
         for i, card in enumerate((self.activity, self.ram, self.vram, self.latency, self.cost)):
             layout.addWidget(card, i // 3, i % 3)
@@ -234,7 +235,8 @@ class StatsView(QWidget):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        raised(p, QRectF(self.rect()).adjusted(8, 8, -8, -8), 24, self.theme.palette, depth=4)
+        m = int(shadow_extent(DEPTH)) + 1
+        raised(p, QRectF(self.rect()).adjusted(m, m, -m, -m), 24, self.theme.palette, depth=DEPTH)
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Escape:

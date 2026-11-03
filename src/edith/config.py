@@ -55,7 +55,7 @@ DEFAULTS: dict[str, dict] = {
               "important_keep_days": 365},
     "archive": {"keep_hours": 24, "describe_every_s": 300, "describe_below_chars": 150,
                 "max_chars_cloud": 4000, "max_chars_local": 2500},
-    "ui": {"language": "en"},
+    "ui": {"language": "en", "show_details": False},
     "network": {"allow": ["127.0.0.1", "localhost"]},
     "exclude": {"titles": [], "processes": []},
 }

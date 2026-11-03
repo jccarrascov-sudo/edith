@@ -54,24 +54,41 @@ class Actions:
 
 
 class SoftButton(QAbstractButton):
-    """A round button of the background's color: raised, or inset while pressed or checked."""
+    """A quiet round button inside the text field: just its glyph, gray, or in the accent while
+    on; pressing it presses a small round hollow into the field."""
 
     def __init__(self, theme: Theme, glyph: Callable[[QPainter, QRectF, QColor], None], checkable=False):
         super().__init__()
         self.theme, self.glyph = theme, glyph
         self.setCheckable(checkable)
-        self.setFixedSize(QSize(30 + 12, 30 + 12))
+        self.setFixedSize(QSize(30, 30))
         self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
         theme.changed.connect(self.update)
 
     def paintEvent(self, _event) -> None:
         pal = self.theme.palette
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        r = QRectF(6, 6, 30, 30)
-        pressed = self.isDown() or self.isChecked()
-        (inset if pressed else raised)(p, r, 15, pal, depth=2.5 if pressed else 3)
+        r = QRectF(3, 3, 24, 24)
+        if self.isDown():
+            inset(p, r, 12, pal, depth=1.5)
         self.glyph(p, r, QColor(pal.accent_text if self.isChecked() else pal.muted))
+
+
+def _reading_html(markdown: str) -> str:
+    """Markdown typeset for reading: every line break kept, generous line height (Qt's 125 %
+    on top of the font's own leading reads like 140 %)."""
+    import re
+
+    from PySide6.QtGui import QTextDocument
+
+    doc = QTextDocument()
+    doc.setMarkdown(markdown.replace("\n", "  \n"))
+    body = doc.toHtml()
+    body = re.sub(r"<body[^>]*>", "<body>", body[body.find("<body"):])   # the label's font, not the document's
+    body = re.sub(r'<p style="', '<p style="line-height:125%; ', body)
+    return re.sub(r"<li style=\"", '<li style="line-height:125%; ', body)
 
 
 def _thumbnail(path: str, w: int = 72, h: int = 42) -> QPixmap:
@@ -189,7 +206,7 @@ class Edith(QWidget):
         self.answer.setFont(font(TEXT_PX))
         self.answer.setWordWrap(True)
         self.answer.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.answer.setTextFormat(Qt.MarkdownText)   # Muse Spark answers with **bold** and lists
+        self.answer.setTextFormat(Qt.RichText)   # answers arrive as Markdown, shown as typeset HTML
         self.scroll = QScrollArea()
         self.scroll.setWidget(self.answer)
         self.scroll.setWidgetResizable(True)
@@ -236,7 +253,7 @@ class Edith(QWidget):
         self.menu = QWidget()
         menu = QVBoxLayout(self.menu)
         menu.setContentsMargins(0, 0, 0, 0)
-        menu.setSpacing(6)
+        menu.setSpacing(8)
         es = self.lang == "es"
         self.btn_activity = self._text_button("Actividad" if es else "Activity",
                                               lambda: self.actions.open_activity(self))
@@ -252,24 +269,28 @@ class Edith(QWidget):
         self._delete_armed = False
         self.text_buttons = (self.btn_activity, self.btn_memory, self.btn_quit, self.btn_hotkey,
                              self.btn_default, self.btn_local, self.btn_presentation, self.btn_delete)
-        for line in ((self.btn_activity, self.btn_memory, self.btn_quit),
-                     (self.btn_hotkey, self.btn_default), (self.btn_local, self.btn_presentation), (self.btn_delete,)):
-            row = QHBoxLayout()
-            row.setSpacing(16)
-            for b in line:
-                row.addWidget(b)
-            row.addStretch(1)
-            menu.addLayout(row)
+        groups = ((self.btn_activity, self.btn_memory, self.btn_local, self.btn_presentation),
+                  ((self.btn_hotkey, self.btn_default),),
+                  (self.btn_delete, self.btn_quit))
+        for n, group in enumerate(groups):
+            if n:
+                menu.addSpacing(10)                 # groups are separated by space, never by lines
+            for item in group:
+                row = QHBoxLayout()
+                row.setSpacing(16)
+                for b in (item if isinstance(item, tuple) else (item,)):
+                    row.addWidget(b)
+                row.addStretch(1)
+                menu.addLayout(row)
         self.menu.hide()
         inner.addWidget(self.menu)
 
-        # Hover-only row: audio and options on the right. Space is kept, so the panel does not
-        # jump when the mouse comes in; the buttons only fade in.
-        self.hover_row = QWidget()
-        row = QHBoxLayout(self.hover_row)
+        # Audio and options live inside the field's right end, like the icons of a search field,
+        # and fade in only while the mouse is over the panel.
+        self.tools = QWidget(self.field)
+        row = QHBoxLayout(self.tools)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
-        row.addStretch(1)
+        row.setSpacing(2)
         self.btn_audio = None
         if self.actions.toggle_audio:
             self.btn_audio = SoftButton(self.theme, bars_glyph, checkable=True)
@@ -280,11 +301,12 @@ class Edith(QWidget):
         self.btn_options = SoftButton(self.theme, dots_glyph, checkable=True)
         self.btn_options.toggled.connect(self._toggle_menu)
         row.addWidget(self.btn_options)
-        self.hover_fx = QGraphicsOpacityEffect(self.hover_row, opacity=0.0)
-        self.hover_row.setGraphicsEffect(self.hover_fx)
+        self.tools.adjustSize()
+        self.field.setTextMargins(TEXT_INSET, 0, self.tools.width() + 8, 0)
+        self.hover_fx = QGraphicsOpacityEffect(self.tools, opacity=0.0)
+        self.tools.setGraphicsEffect(self.hover_fx)
         self._hover_fade = QVariantAnimation(self, duration=150)
         self._hover_fade.valueChanged.connect(lambda v: self.hover_fx.setOpacity(float(v)))
-        inner.addWidget(self.hover_row)
         self._label_memory()
 
     def _text_button(self, label: str, on_click) -> QPushButton:
@@ -494,8 +516,10 @@ class Edith(QWidget):
         self._fit()
 
     def _show_footnote(self, line: str) -> None:
-        self._footnote = line
-        self.foot.setText(line)
+        """What was sent and its cost: kept in the ledger and the Activity view, shown under the
+        answer only with [ui] show_details = true. The panel stays quiet."""
+        self._footnote = line if self.agent.cfg.ui.get("show_details") else ""
+        self.foot.setText(self._footnote)
         self._fit()
 
     # --- edit from memory -----------------------------------------------------------------------
@@ -504,15 +528,13 @@ class Edith(QWidget):
         from ..brain.edit import preview_html
 
         if p is None:
-            self.answer.setTextFormat(Qt.MarkdownText)
             self.based.hide()
             self.foot.setText(self._footnote)
             self._fit()
             return
         pal = self.theme.palette
         old = self.agent.target.text if self.agent.target else ""
-        self.answer.setTextFormat(Qt.RichText)
-        self.answer.setText(preview_html(old, p, pal.accent_text, pal.muted, pal.text))
+        self.answer.setText(f'<div style="line-height:125%;">{preview_html(old, p, pal.accent_text, pal.muted, pal.text)}</div>')
         self.thumb.setPixmap(_thumbnail(p.frame) if p.frame else QPixmap())
         self.thumb.setVisible(bool(p.frame))
         self.based_text.setText(self.agent.t("based_on", source=p.source or "memory", ago=self._ago(p.source_ts)))
@@ -589,10 +611,10 @@ class Edith(QWidget):
         rows = []
         for i, m in enumerate(self._moments):
             when = datetime.fromtimestamp(m["ts"]).strftime("%H:%M")
-            line = metrics.elidedText(f'{self.agent.t("kind_" + m["kind"])} · {m["text"]}', Qt.ElideRight, width)
-            rows.append(f'<a href="{i}" style="color:{pal.text}; text-decoration:none;">'
-                        f'<span style="color:{pal.muted};">{when}</span>&nbsp;&nbsp;{escape(line)}</a>')
-        self.moments.setText("<br>".join(rows))
+            line = metrics.elidedText(m["text"], Qt.ElideRight, width)
+            rows.append(f'<tr><td style="padding:3px 0;"><a href="{i}" style="color:{pal.text}; text-decoration:none;">'
+                        f'{escape(line)}</a></td><td align="right" style="color:{pal.muted}; padding:3px 0;">{when}</td></tr>')
+        self.moments.setText(f'<table width="100%" cellspacing="0" cellpadding="0">{"".join(rows)}</table>')
 
     def _ask_moment(self, index: str) -> None:
         from datetime import datetime
@@ -603,7 +625,7 @@ class Edith(QWidget):
         self._enter()
 
     def _show_reply(self, reply: str) -> None:
-        self.answer.setText(reply.replace("\n", "  \n"))   # Markdown: keep every line break
+        self.answer.setText(_reading_html(reply))
         self.scroll.verticalScrollBar().setValue(0)
         if self.agent.awaiting and not self.expanded:
             self.expand(activate=False)  # a confirmation is needed: it must be seen
@@ -667,6 +689,9 @@ class Edith(QWidget):
         self._apply_hotkey(DEFAULT_OPEN)
 
     def eventFilter(self, obj, event) -> bool:
+        if obj is self.field and event.type() == QEvent.Resize:
+            self.tools.move(self.field.width() - self.tools.width() - 6,
+                            (self.field.height() - self.tools.height()) // 2)
         if self.capturing and obj is self.field and event.type() == QEvent.KeyPress:
             if event.key() == Qt.Key_Escape:
                 self._end_capture()

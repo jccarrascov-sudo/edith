@@ -76,7 +76,10 @@ def block_problems(plan: dict, result: runner.RowResult, expected: dict[str, str
     """(block id, what went wrong) from one replayed row. `expected` maps field label -> text
     the field must hold (default: what the user typed in the demonstration)."""
     if result.error_block or result.error:
-        return [(result.error_block or plan["blocks"][0]["id"], result.error or "failed")]
+        problem = result.error or "failed"
+        if result.page_text:
+            problem += "\nWhat the page showed at that moment (accessibility tree):\n" + result.page_text
+        return [(result.error_block or plan["blocks"][0]["id"], problem)]
     expected = expected if expected is not None else plan["demo"]["values"]
     problems = []
     for b in plan["blocks"]:
@@ -147,9 +150,13 @@ def verify(plan: dict, code: dict[str, str], cases: list[Case], on_event=None) -
     save_id = next(b["id"] for b in plan["blocks"] if b["type"] == "save")
     stamp = {"cases": [], "error": None, "error_block": None}
     problems: list[tuple[str, str]] = []
-    if len(stored) != sum(r.ok for r in results):
-        problems.append((save_id, f"{sum(r.ok for r in results)} rows went through but the app holds "
-                                  f"{len(stored)} records"))
+    order = [b["id"] for b in plan["blocks"]]
+    # A row that failed AFTER the save step (e.g. waiting for the confirmation) was still saved.
+    saved_rows = [r for r in results if r.ok or (r.error_block in order
+                                                 and order.index(r.error_block) > order.index(save_id))]
+    if len(stored) != len(saved_rows):
+        problems.append((save_id, f"{len(saved_rows)} rows reached the save step successfully but the app "
+                                  f"holds {len(stored)} records"))
     stored_iter = iter(stored)
     for case, result in zip(cases, results):
         cs = {"case": case.name, "row": case.index + 1, "fields": [], "record": [],
@@ -160,6 +167,8 @@ def verify(plan: dict, code: dict[str, str], cases: list[Case], on_event=None) -
                                  "match": got is not None and _same(got, want)})
         who = "the user typed" if case.name == "your demo" else "the plan says"
         case_problems = [(b, f"[{case.name}] {p}") for b, p in block_problems(plan, result, case.fields, who)]
+        if not result.ok and any(r is result for r in saved_rows):
+            next(stored_iter, None)  # its record exists; the row failed later, so it is not compared
         if result.ok:
             got_record = next(stored_iter, {})
             for col, want in case.record.items():
@@ -219,7 +228,10 @@ def fabricate(cfg: Config, plan: dict, client=None, max_attempts: int = 3, log_f
     if client is None and code is None:
         from ..brain.client import MetaClient
         client = MetaClient(cfg)
-    code = dict(code) if code else codegen.generate(client, plan, snapshot, demo_row, log_fn=log_fn)
+    try:
+        code = dict(code) if code else codegen.generate(client, plan, snapshot, demo_row, log_fn=log_fn)
+    except codegen.NoCode as exc:
+        raise BuildError(f"the model wrote no usable code ({exc})") from None
     missing = [b["id"] for b in plan["blocks"] if b["id"] not in code]
     if missing:
         raise BuildError(f"the model wrote no code for {missing}")
@@ -249,9 +261,12 @@ def fabricate(cfg: Config, plan: dict, client=None, max_attempts: int = 3, log_f
         for block_id in dict.fromkeys(b for b, _ in problems):  # each broken block once, in order
             block = next(b for b in plan["blocks"] if b["id"] == block_id)
             problem = "\n".join(p for b, p in problems if b == block_id)
-            code[block_id] = codegen.regenerate(client, plan, block, code[block_id], problem, snapshot,
-                                                demo_row, log_fn=log_fn)
-            v.repaired.append(block_id)
+            try:
+                code[block_id] = codegen.regenerate(client, plan, block, code[block_id], problem, snapshot,
+                                                    demo_row, log_fn=log_fn)
+                v.repaired.append(block_id)
+            except codegen.NoCode as exc:  # keep the old block; the next round reports it again
+                log_fn(f"    [{block_id}] could not be regenerated: {exc}")
     v.user_record = user_record
     return code, v
 

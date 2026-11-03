@@ -153,35 +153,64 @@ def plan_brief(plan: dict) -> str:
     return json.dumps({"intent": plan["intent"], "blocks": blocks}, ensure_ascii=False, indent=1)
 
 
+class NoCode(RuntimeError):
+    """The model did not reply with usable code, even after a retry."""
+
+
+def _ask(client, purpose: str, content: str, max_tokens: int, effort: str, log_fn) -> dict[str, str]:
+    """One code request, retried once if the reply is empty or not JSON. Reasoning tokens count
+    against max_tokens, so an empty reply usually means the budget ran out: the retry doubles
+    it and lowers the effort."""
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": content}]
+    for attempt in (1, 2):
+        t0 = time.monotonic()
+        response = client.chat(purpose if attempt == 1 else f"{purpose} (retry)", messages=messages,
+                               max_tokens=max_tokens * attempt, reasoning_effort=effort if attempt == 1 else "low")
+        choice = response.choices[0]
+        text = choice.message.content or ""
+        cost = f"{time.monotonic() - t0:.1f}s, ${getattr(response, 'edith_cost', 0):.4f}"
+        try:
+            code = parse_reply(text)
+            if code:
+                return code
+            raise ValueError("empty object")
+        except ValueError as exc:  # JSONDecodeError is a ValueError
+            details = getattr(response.usage, "completion_tokens_details", None)
+            reasoning = getattr(details, "reasoning_tokens", None) if details else None
+            log_fn(f"  {purpose}: unusable reply ({exc}; finish={choice.finish_reason}, "
+                   f"reasoning tokens={reasoning}, {cost})")
+            if text.strip():
+                messages = messages + [{"role": "assistant", "content": text},
+                                       {"role": "user", "content": "Reply with the JSON object only."}]
+    raise NoCode(f"{purpose}: no usable code after 2 replies")
+
+
 def generate(client, plan: dict, snapshot: str, sample_row: dict, log_fn=print) -> dict[str, str]:
     """Code for every block in one call (cheaper than one call per block)."""
-    content = (f"Plan:\n{plan_brief(plan)}\n\nAccessibility snapshot of the form page "
-               f"({plan['target']['url']}):\n{snapshot}\n\nExample row: "
-               f"{json.dumps(sample_row, ensure_ascii=False, default=str)}\n\n"
-               "Write the code of every block.")
+    nl = chr(10)
+    content = nl.join([
+        "Plan:", plan_brief(plan), "",
+        f"Accessibility snapshot of the form page ({plan['target']['url']}):", snapshot, "",
+        f"Example row: {json.dumps(sample_row, ensure_ascii=False, default=str)}", "",
+        "Write the code of every block."])
     t0 = time.monotonic()
-    response = client.chat("workshop: code all blocks", max_tokens=8000, reasoning_effort="low",
-                           messages=[{"role": "system", "content": SYSTEM_PROMPT},
-                                     {"role": "user", "content": content}])
-    code = parse_reply(response.choices[0].message.content)
-    log_fn(f"  code for {len(code)} blocks ({time.monotonic() - t0:.1f}s, "
-           f"${getattr(response, 'edith_cost', 0):.4f})")
+    code = _ask(client, "workshop: code all blocks", content, 8000, "low", log_fn)
+    log_fn(f"  code for {len(code)} blocks ({time.monotonic() - t0:.1f}s)")
     return code
 
 
 def regenerate(client, plan: dict, block: dict, old_code: str, problem: str, snapshot: str,
                sample_row: dict, log_fn=print) -> str:
     """New code for ONE block, given what went wrong. The other blocks are left alone."""
-    content = (f"Plan:\n{plan_brief(plan)}\n\nAccessibility snapshot of the form page:\n{snapshot}\n\n"
-               f"Example row: {json.dumps(sample_row, ensure_ascii=False, default=str)}\n\n"
-               f"Block {block['id']} ({block['type']}: {block.get('title', '')}) currently is:\n"
-               f"{old_code}\n\nWhen it ran on the user's own demonstration it failed:\n{problem}\n\n"
-               f'Fix only this block. Reply with JSON: {{"{block["id"]}": "<full source>"}}')
+    nl = chr(10)
+    content = nl.join([
+        "Plan:", plan_brief(plan), "",
+        "Accessibility snapshot of the form page:", snapshot, "",
+        f"Example row: {json.dumps(sample_row, ensure_ascii=False, default=str)}", "",
+        f"Block {block['id']} ({block['type']}: {block.get('title', '')}) currently is:", old_code, "",
+        "When it ran on the user's own demonstration it failed:", problem, "",
+        f'Fix only this block. Reply with JSON: {{"{block["id"]}": "<full source>"}}'])
     t0 = time.monotonic()
-    response = client.chat(f"workshop: repair {block['id']}", max_tokens=4000, reasoning_effort="medium",
-                           messages=[{"role": "system", "content": SYSTEM_PROMPT},
-                                     {"role": "user", "content": content}])
-    code = parse_reply(response.choices[0].message.content)
-    log_fn(f"  new code for {block['id']} ({time.monotonic() - t0:.1f}s, "
-           f"${getattr(response, 'edith_cost', 0):.4f})")
+    code = _ask(client, f"workshop: repair {block['id']}", content, 4000, "medium", log_fn)
+    log_fn(f"  new code for {block['id']} ({time.monotonic() - t0:.1f}s)")
     return code.get(block["id"]) or next(iter(code.values()))

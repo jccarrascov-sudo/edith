@@ -62,3 +62,27 @@ Numbers are from real runs; failures are listed too.
 - Edith's own text field is never read by the memory (FieldWatcher skips its own process).
 - Checked: 92 tests pass; the UI starts and quits cleanly on the real desktop (dark theme);
   light and dark renders reviewed. Not yet run end-to-end from the panel against the portal.
+
+## Phase 4 — Interface acceptance (closed Nov 2)
+- Whole flow driven from the real panel with the keyboard only (click the dot, type "haz el
+  resto", Enter, Enter to confirm), real portal v1, real Muse Spark. The demonstration was
+  SIMULATED: row 1 was really submitted to the portal and the memory events describing it
+  were written to an isolated timeline (no screen recording, no frames).
+- Result (3rd run): plan OK on attempt 1, verification 33/33 on attempt 1, confirmation shown,
+  28 sent + row 19 skipped (empty Amount); independent check: 29/29 complete Excel rows in the
+  portal's DB, exact, 0 duplicates, 0 unexpected. 58 s end to end (52 s building and
+  verifying, 4 s sending), $0.027.
+- Failures found on the way, all fixed with tests:
+  1. run 1: a repair reply came back empty (reasoning used up max_tokens) and the agent
+     crashed with JSONDecodeError. Now an empty/non-JSON reply is retried once with double the
+     budget and low effort; if it still fails the block is kept and reported, never a crash.
+  2. run 2: the wait-for-confirmation block guessed the success text (no key frames in a
+     simulated demo) and 3 repairs guessed again; the save block was also blamed although the
+     app held the records. Now a failing block's problem includes the page's accessibility tree
+     at that moment, and rows that failed after the save step count as saved.
+  3. a click elsewhere closed the panel and the confirmation was hidden. Now a confirmation
+     opens the panel without taking the focus.
+  Also: the status line counts rows to send (28, not 29), skipped reasons and the demo
+  reference are in the panel's language.
+- Idle CPU (30 s, after start-up): UI alone 0.11 % of total CPU (2.1 % of one core of 20),
+  83 MB; UI + memory recording 1.14 % (22.9 % of one core), 851 MB (whisper model).

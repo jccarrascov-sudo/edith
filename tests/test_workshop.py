@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -243,6 +244,14 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual({b for b, _ in problems}, {"b4"})
         self.assertEqual(len(problems), 3)  # the demo and both extra rows
 
+    def test_failing_wait_after_save_blames_only_the_wait_and_shows_the_page(self):
+        plan, code = plan_and_code()
+        plan["target"] = {"url": self.url}
+        code["b8"] = 'def run(page, row, ctx):\n    expect(page.get_by_text("All done!")).to_be_visible(timeout=1000)'
+        problems, _ = build.verify(plan, code, self.cases(plan))
+        self.assertEqual({b for b, _ in problems}, {"b8"})  # the save worked: the app holds the records
+        self.assertIn("Invoice #1 saved.", problems[0][1])  # the repair sees the real confirmation
+
     def test_empty_cell_row_is_skipped_and_the_run_goes_on(self):
         plan, code = plan_and_code()
         events = []
@@ -255,6 +264,33 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual(len(stored), 1)
         self.assertIn({"event": "row_skipped", "row": 0, "reason": "empty Amount"}, events)
         self.assertEqual(events[0]["level"], "page")
+
+
+class CodeReplyTests(unittest.TestCase):
+    """An empty or non-JSON reply (e.g. the reasoning used up max_tokens) is retried, never a crash."""
+
+    @staticmethod
+    def client(*replies):
+        from types import SimpleNamespace
+        calls = []
+
+        def chat(purpose, **kw):
+            calls.append(kw["max_tokens"])
+            text = replies[len(calls) - 1]
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text), finish_reason="length")],
+                                   usage=SimpleNamespace(completion_tokens_details=None), edith_cost=0.0)
+        return SimpleNamespace(chat=chat), calls
+
+    def test_empty_reply_is_retried_with_a_bigger_budget(self):
+        client, calls = self.client("", json.dumps({"b5": "def run(page, row, ctx):\n    pass"}))
+        code = codegen._ask(client, "repair b5", "x", 4000, "medium", lambda *_: None)
+        self.assertIn("b5", code)
+        self.assertEqual(calls, [4000, 8000])
+
+    def test_two_unusable_replies_raise_nocode(self):
+        client, _ = self.client("", "not json")
+        with self.assertRaises(codegen.NoCode):
+            codegen._ask(client, "repair b5", "x", 4000, "medium", lambda *_: None)
 
 
 if __name__ == "__main__":

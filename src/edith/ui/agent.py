@@ -37,12 +37,15 @@ TEXT = {
         "checking": "Checking “{name}” against its proof…",
         "repairing": "The proof failed. Repairing only the broken step…",
         "not_verified": "I couldn't make it match what you did, so I sent nothing.",
-        "confirm": "Based on: {demo}.\nSend {n} rows{totals}.{skipped}\nEnter to send · Esc to cancel",
+        "confirm": "Like {demo}.\nSend {n} rows{totals}.{skipped}\nEnter to send · Esc to cancel",
+        "demo_ref": "your demo at {time} in {where}",
         "skipped_row": "\nRow {row} is skipped ({why}).",
+        "empty": "empty {cols}",
         "writing": "Writing row {i} of {n} in {where}…",
         "cancelled": "Okay, nothing sent.",
         "done": "{ok} sent{skipped}{failed}. About {saved} saved.",
         "done_skipped": ", {n} skipped",
+        "done_skipped_1": ", 1 skipped",
         "done_failed": ", {n} failed",
         "failed": "Something went wrong, so I stopped: {error}",
         "nothing": "There is nothing left to send.",
@@ -57,12 +60,15 @@ TEXT = {
         "checking": "Comprobando “{name}” con su prueba…",
         "repairing": "La prueba falló. Reparando solo el paso roto…",
         "not_verified": "No logré que coincidiera con lo que hiciste, así que no envié nada.",
-        "confirm": "Basado en: {demo}.\nEnviar {n} filas{totals}.{skipped}\nEnter para enviar · Esc para cancelar",
+        "confirm": "Como {demo}.\nEnviar {n} filas{totals}.{skipped}\nEnter para enviar · Esc para cancelar",
+        "demo_ref": "tu demo de las {time} en {where}",
         "skipped_row": "\nLa fila {row} se omite ({why}).",
+        "empty": "{cols} vacío",
         "writing": "Escribiendo fila {i} de {n} en {where}…",
         "cancelled": "Listo, no envié nada.",
         "done": "{ok} enviadas{skipped}{failed}. Unos {saved} ahorrados.",
         "done_skipped": ", {n} omitidas",
+        "done_skipped_1": ", 1 omitida",
         "done_failed": ", {n} con error",
         "failed": "Algo falló y me detuve: {error}",
         "nothing": "No queda nada por enviar.",
@@ -203,6 +209,17 @@ class Agent(QObject):
             tool_dir = build.save_tool(plan, code, v)
         self._confirm_and_run(tool_dir, demo)
 
+    def _demo_ref(self, demo: seg_mod.Segment) -> str:
+        """Short: "your demo at 21:49 in Invoice Portal" (the page, not the browser's name)."""
+        title = (demo.fields[-1].get("window") or "") if demo.fields else ""
+        parts = [p.strip() for p in title.split(" - ") if p.strip()]
+        where = parts[-2] if len(parts) >= 3 else (parts[0] if parts else demo.process)
+        return self.t("demo_ref", time=time.strftime("%H:%M", time.localtime(demo.start)), where=where)
+
+    def _why(self, reason: str) -> str:
+        """build.summary's reasons ("empty Amount") in the panel's language."""
+        return self.t("empty", cols=reason[6:]) if reason.startswith("empty ") else reason
+
     def _prove(self, tool_dir: Path) -> bool:
         """Dry proof before every use; on failure repair against the stored demo (golden rule)."""
         plan, code = build.load_tool(tool_dir)
@@ -227,11 +244,11 @@ class Agent(QObject):
             self.reply.emit(self.t("nothing"))
             return
         totals = "".join(f" · {label} {value:,.2f}" for label, value in s["totals"].items())
-        skipped = "".join(self.t("skipped_row", row=i + 2, why=why) for i, why in s["skipped"])
+        skipped = "".join(self.t("skipped_row", row=i + 2, why=self._why(why)) for i, why in s["skipped"])
         self.status.emit("")
         self._decision.clear()
         self.awaiting = True
-        self.reply.emit(self.t("confirm", demo=demo.describe(), n=s["send"], totals=totals, skipped=skipped))
+        self.reply.emit(self.t("confirm", demo=self._demo_ref(demo), n=s["send"], totals=totals, skipped=skipped))
         self._decision.wait()
         self.awaiting = False
         if not self._confirmed:
@@ -245,7 +262,7 @@ class Agent(QObject):
         def on_event(event: dict) -> None:
             if event.get("event") == "row_in":
                 count["i"] += 1
-                self.status.emit(self.t("writing", i=count["i"], n=len(rows), where=where))
+                self.status.emit(self.t("writing", i=count["i"], n=s["send"], where=where))
 
         t0 = time.monotonic()
         results = build.run_rows_logged(tool_dir, rows, log_fn=log.info, on_event=on_event)
@@ -255,5 +272,6 @@ class Agent(QObject):
         saved = max(0.0, plan.get("seconds_per_row_by_hand", 0) * ok - (time.monotonic() - t0))
         self.reply.emit(self.t(
             "done", ok=ok, saved=duration(saved),
-            skipped=self.t("done_skipped", n=n_skipped) if n_skipped else "",
+            skipped=(self.t("done_skipped_1") if n_skipped == 1 else self.t("done_skipped", n=n_skipped))
+            if n_skipped else "",
             failed=self.t("done_failed", n=failed) if failed else ""))

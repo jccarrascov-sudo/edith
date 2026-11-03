@@ -34,6 +34,7 @@ class RowResult:
     error: str | None = None
     seconds: float = 0.0
     skipped: str | None = None  # why the row was not sent (e.g. an empty cell)
+    page_text: str | None = None  # what the page showed when a block failed (for the repair)
 
 
 def transform(value, spec: dict) -> str:
@@ -127,6 +128,14 @@ def empty_cells(plan: dict, row: dict) -> list[str]:
     return [c for c in cols if row.get(c) is None or (isinstance(row.get(c), str) and not row[c].strip())]
 
 
+def page_text(page, limit: int = 2500) -> str | None:
+    """The page's accessibility tree as text: what a failing block actually had in front of it."""
+    try:
+        return f"{page.url}\n{page.locator('body').aria_snapshot(timeout=2000)}"[:limit]
+    except Exception:
+        return None
+
+
 def run_one(page, plan: dict, blocks: dict[str, Callable], index: int, row: dict, url: str,
             emit: EventFn) -> RowResult:
     t_row = time.monotonic()
@@ -145,7 +154,8 @@ def run_one(page, plan: dict, blocks: dict[str, Callable], index: int, row: dict
             error = short_error(exc)
             emit({"event": "block_error", "row": index, "block": b["id"], "error": error})
             emit({"event": "row_out", "row": index, "ok": False, "filled": ctx.get("filled", {}), "level": LEVEL})
-            return RowResult(index, False, ctx.get("filled", {}), b["id"], error, time.monotonic() - t_row)
+            return RowResult(index, False, ctx.get("filled", {}), b["id"], error, time.monotonic() - t_row,
+                             page_text=page_text(page))
         emit({"event": "block_done", "row": index, "block": b["id"], "ms": round((time.monotonic() - t0) * 1000)})
     emit({"event": "row_out", "row": index, "ok": True, "filled": ctx.get("filled", {}), "level": LEVEL})
     return RowResult(index, True, ctx.get("filled", {}), seconds=time.monotonic() - t_row)

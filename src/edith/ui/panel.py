@@ -261,7 +261,9 @@ class Edith(QWidget):
         self._collapse_now()
         self._fade(start=0.4)
 
-    def expand(self) -> None:
+    def expand(self, activate: bool = True) -> None:
+        """Open the panel. `activate=False` shows it without taking the focus from the app the
+        user is in (used when Edith needs a confirmation while the panel was closed)."""
         if self.expanded:
             return
         self.expanded = True
@@ -270,9 +272,10 @@ class Edith(QWidget):
         self._fit()
         self._fade()
         self.raise_()
-        self.activateWindow()
-        self.field.setFocus()
-        self.field.selectAll()
+        if activate:
+            self.activateWindow()
+            self.field.setFocus()
+            self.field.selectAll()
 
     def _fade(self, start: float = 0.0) -> None:
         self._fade_in.stop()
@@ -288,7 +291,7 @@ class Edith(QWidget):
         has_answer = bool(self.answer.text())
         self.scroll.setVisible(has_answer)
         if has_answer:
-            self.scroll.setFixedHeight(min(ANSWER_MAX_H, self.answer.heightForWidth(inner - 8) + 4))
+            self.scroll.setFixedHeight(min(ANSWER_MAX_H, self.answer.heightForWidth(inner - 10) + 14))
         self.status.setVisible(bool(self.status.text()))
         lay = self.content.layout()
         h = lay.totalHeightForWidth(w) if lay.hasHeightForWidth() else lay.sizeHint().height()
@@ -322,6 +325,8 @@ class Edith(QWidget):
     def _show_reply(self, reply: str) -> None:
         self.answer.setText(reply)
         self.scroll.verticalScrollBar().setValue(0)
+        if self.agent.awaiting and not self.expanded:
+            self.expand(activate=False)  # a confirmation is needed: it must be seen
         self._fit()
 
     # --- options --------------------------------------------------------------------------------

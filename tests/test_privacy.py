@@ -81,12 +81,33 @@ class LogTests(unittest.TestCase):
         self.assertIn("ValueError: boom", text)
 
 
+class NoConsoleTests(unittest.TestCase):
+    def test_the_windowless_launcher_starts_without_stdout_and_stderr(self):
+        from edith.__main__ import main
+
+        handlers = list(logging.getLogger("edith").handlers)
+        try:
+            with mock.patch.object(sys, "stdout", None), mock.patch.object(sys, "stderr", None):
+                main(["status"])                         # edith-ui.exe has no console at all
+        finally:
+            for h in logging.getLogger("edith").handlers:
+                if h not in handlers:
+                    h.close()
+            logging.getLogger("edith").handlers = handlers
+            sys.excepthook = sys.__excepthook__
+
+
 class OnboardingTests(unittest.TestCase):
     def setUp(self):
         from edith.ui import agent, hotkey, panel, theme
         from edith.ui.onboarding import Onboarding
 
         panel.STATE_FILE.unlink(missing_ok=True)
+        # A real Edith may be running and own Ctrl+Alt+E: the tests use a combination of their own.
+        for target in (hotkey, panel):
+            p = mock.patch.object(target, "DEFAULT_OPEN", "Ctrl+Alt+Shift+F17")
+            p.start()
+            self.addCleanup(p.stop)
         self.hotkeys = hotkey.GlobalHotkeys()
         with mock.patch.object(theme, "windows_is_light", return_value=True):
             th = theme.Theme()
@@ -109,7 +130,7 @@ class OnboardingTests(unittest.TestCase):
         self.key(Qt.Key_Return)
         self.assertIn("Your screen never leaves your PC. Only what you ask goes to the cloud.", self.onb.body.text())
         self.key(Qt.Key_Return)
-        self.assertIn("Ctrl+Alt+E", self.onb.body.text())
+        self.assertIn("Ctrl+Alt+Shift+F17", self.onb.body.text())
         self.assertFalse(self.onb.change.isHidden())
         self.key(Qt.Key_Return)
         saved = json.loads(self.panel_mod.STATE_FILE.read_text(encoding="utf-8"))

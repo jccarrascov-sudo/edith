@@ -179,6 +179,11 @@ class PanelTests(unittest.TestCase):
 
         self.panel_mod = panel
         panel.STATE_FILE.unlink(missing_ok=True)
+        # A real Edith may be running and own Ctrl+Alt+E: the tests use a combination of their own.
+        for target in (hotkey, panel):
+            p = mock.patch.object(target, "DEFAULT_OPEN", "Ctrl+Alt+Shift+F17")
+            p.start()
+            self.addCleanup(p.stop)
         self.hotkeys = hotkey.GlobalHotkeys()
         with mock.patch.object(theme, "windows_is_light", return_value=True):
             self.theme = theme.Theme()

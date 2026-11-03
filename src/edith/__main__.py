@@ -117,7 +117,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.command is None:  # plain `edith`: open it on screen
         args = parser.parse_args((["-v"] if args.verbose else []) + ["ui"])
 
-    logging.basicConfig(level=logging.WARNING,
+    # The windowless `edith-ui` has no console: sys.stdout and sys.stderr are None there, and
+    # everything goes to the rotating log file only.
+    console = sys.stderr is not None
+    logging.basicConfig(level=logging.WARNING, handlers=None if console else [logging.NullHandler()],
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
     logging.getLogger("edith").setLevel(logging.DEBUG if args.verbose else logging.INFO)
     from .forget import setup_logs
@@ -125,7 +128,8 @@ def main(argv: list[str] | None = None) -> None:
     setup_logs(args.verbose)
     # Windows consoles default to a legacy code page; window titles and answers need UTF-8.
     for stream in (sys.stdout, sys.stderr):
-        stream.reconfigure(encoding="utf-8", errors="replace")
+        if stream is not None:
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
     if args.command != "ui":  # Qt sets per-monitor-v2 awareness itself
         _dpi_aware()

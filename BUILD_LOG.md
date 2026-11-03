@@ -321,3 +321,9 @@ The user asked that Edith keep "any important detail" of the day, and that impor
   dot's pixels is (32.0, 32.0); open panel centered at x 932 = the dot's center; field margins
   24/24/24. Tests: 172 pass.
 
+
+## Fix (Nov 3): the desktop shortcut did not open Edith
+- edith-ui.exe (windowless) has no stdout/stderr; reconfiguring them to UTF-8 raised before the
+  window appeared. Found in state/logs/edith.log (the Phase 5 rotating log). Fixed, with a test that
+  starts Edith with no console; hotkey tests now use their own combination, since a running Edith
+  owns Ctrl+Alt+E. A desktop shortcut (with an icon drawn by code) was created for the user.

@@ -1,8 +1,9 @@
 """Edith on screen: a small soft dot that opens into a minimal panel.
 
 At rest: a 40 px raised dot, always on top, draggable, with no text or icon. Its center is
-the only status indicator: gray when idle, the accent while thinking or acting (a soft fade,
-no animation). A click opens the panel: one text field and the answer under it. The audio
+the only status indicator: gray when idle, a dimmer gray while the memory is paused, the
+accent while thinking or acting (a soft fade, no animation). A global shortcut (default
+Ctrl+Alt+E, changeable in the options) opens and closes the panel from any app. A click opens the panel: one text field and the answer under it. The audio
 and options buttons fade in only while the mouse is over the panel. Esc or a click elsewhere
 closes it back into the dot. Rule: what is not needed right now is not shown."""
 
@@ -13,13 +14,14 @@ import logging
 from dataclasses import dataclass
 from typing import Callable
 
-from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QVariantAnimation
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (QAbstractButton, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from ..config import ROOT
 from .agent import Agent
+from .hotkey import DEFAULT_OPEN, GlobalHotkeys, from_key_event
 from .theme import Theme, inset, raised
 
 log = logging.getLogger(__name__)
@@ -30,7 +32,7 @@ PANEL_W = 380
 RADIUS = 22
 FADE_MS = 180
 ANSWER_MAX_H = 420
-POSITION_FILE = ROOT / "state" / "ui.json"
+STATE_FILE = ROOT / "state" / "ui.json"   # dot position and shortcut
 
 
 @dataclass
@@ -88,7 +90,7 @@ def dots_glyph(p: QPainter, r: QRectF, color: QColor) -> None:
 
 
 class Edith(QWidget):
-    def __init__(self, theme: Theme, agent: Agent, actions: Actions):
+    def __init__(self, theme: Theme, agent: Agent, actions: Actions, hotkeys: GlobalHotkeys | None = None):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.theme, self.agent, self.actions = theme, agent, actions
         self.lang = agent.lang
@@ -96,7 +98,10 @@ class Edith(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setWindowTitle("Edith")
         self.expanded = False
-        self.dot_pos = self._load_position()
+        self.state = self._load_state()
+        self.dot_pos = self._initial_position()
+        self.hotkeys = hotkeys
+        self.capturing = False   # waiting for a new shortcut to be pressed
         self._press: QPoint | None = None
         self._dragged = False
         self.memory_on = True
@@ -113,6 +118,12 @@ class Edith(QWidget):
         agent.busy_changed.connect(lambda _busy: self._update_dot())
         agent.status.connect(self._show_status)
         agent.reply.connect(self._show_reply)
+        if hotkeys:
+            hotkeys.pressed.connect(lambda name: self.toggle() if name == "open" else None)
+            wanted = self.state.get("hotkey", DEFAULT_OPEN)
+            if not hotkeys.set("open", wanted) and wanted != DEFAULT_OPEN:
+                hotkeys.set("open", DEFAULT_OPEN)
+        self._label_hotkey()
         self._restyle()
         self._collapse_now()
 
@@ -129,6 +140,7 @@ class Edith(QWidget):
         self.field.setFrame(False)
         self.field.setMinimumHeight(30)
         self.field.returnPressed.connect(self._enter)
+        self.field.installEventFilter(self)   # catches the new shortcut while capturing
         outer.addWidget(self.field)
         outer.addSpacing(6)
 
@@ -148,25 +160,38 @@ class Edith(QWidget):
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         outer.addWidget(self.scroll)
 
-        # Hover-only row: options on the right, audio next to it. Space is kept, so the panel
-        # does not jump when the mouse comes in; the buttons only fade in.
-        self.hover_row = QWidget()
-        row = QHBoxLayout(self.hover_row)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
+        # Options (shown by the options button): two short lines of gray text buttons, so they
+        # fit in both languages. Activity, pause, quit; then the global shortcut.
         self.menu = QWidget()
-        menu = QHBoxLayout(self.menu)
+        menu = QVBoxLayout(self.menu)
         menu.setContentsMargins(0, 0, 0, 0)
-        menu.setSpacing(14)
+        menu.setSpacing(6)
         es = self.lang == "es"
         self.btn_activity = self._text_button("Actividad" if es else "Activity",
                                               lambda: self.actions.open_activity(self))
         self.btn_memory = self._text_button("", self._toggle_memory)
         self.btn_quit = self._text_button("Salir" if es else "Quit", self.actions.quit)
-        for b in (self.btn_activity, self.btn_memory, self.btn_quit):
-            menu.addWidget(b)
+        self.btn_hotkey = self._text_button("", self._start_capture)
+        self.btn_default = self._text_button(self.agent.t("hotkey_default"), self._restore_default)
+        self.btn_default.hide()   # only while a new shortcut is being captured
+        self.text_buttons = (self.btn_activity, self.btn_memory, self.btn_quit, self.btn_hotkey,
+                             self.btn_default)
+        for line in ((self.btn_activity, self.btn_memory, self.btn_quit), (self.btn_hotkey, self.btn_default)):
+            row = QHBoxLayout()
+            row.setSpacing(16)
+            for b in line:
+                row.addWidget(b)
+            row.addStretch(1)
+            menu.addLayout(row)
         self.menu.hide()
-        row.addWidget(self.menu)
+        outer.addWidget(self.menu)
+
+        # Hover-only row: audio and options on the right. Space is kept, so the panel does not
+        # jump when the mouse comes in; the buttons only fade in.
+        self.hover_row = QWidget()
+        row = QHBoxLayout(self.hover_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
         row.addStretch(1)
         self.btn_audio = None
         if self.actions.toggle_audio:
@@ -190,6 +215,7 @@ class Edith(QWidget):
         b.setFlat(True)
         b.setFont(font(9.5))
         b.setCursor(Qt.PointingHandCursor)
+        b.setFocusPolicy(Qt.NoFocus)   # the text field keeps the focus
         b.clicked.connect(on_click)
         return b
 
@@ -206,7 +232,7 @@ class Edith(QWidget):
             f"QScrollBar::handle:vertical {{ background: {pal.idle}; border-radius: 3px; min-height: 24px; }}"
             "QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page"
             " { background: none; height: 0; }")
-        for b in (self.btn_activity, self.btn_memory, self.btn_quit):
+        for b in self.text_buttons:
             b.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {pal.muted};"
                             f" padding: 0; }} QPushButton:hover {{ color: {pal.text}; }}")
         # Placeholder color follows the theme too.
@@ -219,7 +245,9 @@ class Edith(QWidget):
 
     def _dot_target(self) -> str:
         pal = self.theme.palette
-        return pal.accent if self.agent.busy else pal.idle
+        if self.agent.busy:
+            return pal.accent
+        return pal.idle if self.memory_on else pal.paused
 
     def _update_dot(self) -> None:
         self._dot_fade.stop()
@@ -237,14 +265,22 @@ class Edith(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         if not self.expanded:
-            raised(p, QRectF(M, M, DOT, DOT), DOT / 2, pal, depth=4)
+            ring, center = self.dot_geometry()
+            raised(p, ring, DOT / 2, pal, depth=4)
             p.setPen(Qt.NoPen)
             p.setBrush(self.dot_color)
-            p.drawEllipse(QPointF(M + DOT / 2, M + DOT / 2), 5, 5)
+            p.drawEllipse(center, 5, 5)
             return
         raised(p, QRectF(M, M, self.width() - 2 * M, self.height() - 2 * M), RADIUS, pal, depth=6)
         g = self.field.geometry()
         inset(p, QRectF(g).adjusted(-14, -6, 14, 6), 16, pal, depth=2.5)
+
+    def dot_geometry(self) -> tuple[QRectF, QPointF]:
+        """The raised circle and the center of the status dot. Both come from the widget's own
+        rectangle (equal margins all round, so the soft shadows are never cut), so the dot and
+        the circle share one geometric center: the widget's."""
+        ring = QRectF(self.rect()).adjusted(M, M, -M, -M)
+        return ring, ring.center()
 
     # --- open / close ---------------------------------------------------------------------------
     def _collapse_now(self) -> None:
@@ -276,6 +312,17 @@ class Edith(QWidget):
             self.activateWindow()
             self.field.setFocus()
             self.field.selectAll()
+
+    def toggle(self) -> None:
+        """The global shortcut: open (with the cursor in the field) or close."""
+        if self.expanded and self.isActiveWindow():
+            self.collapse()
+            return
+        self.expand()
+        self.raise_()
+        self.activateWindow()
+        self.field.setFocus()
+        self.field.selectAll()
 
     def _fade(self, start: float = 0.0) -> None:
         self._fade_in.stop()
@@ -332,6 +379,7 @@ class Edith(QWidget):
     # --- options --------------------------------------------------------------------------------
     def _toggle_menu(self, on: bool) -> None:
         self.menu.setVisible(on)
+        self._fit()
 
     def _toggle_memory(self) -> None:
         self.set_memory_on(self.actions.toggle_memory())
@@ -339,11 +387,57 @@ class Edith(QWidget):
     def set_memory_on(self, on: bool) -> None:
         self.memory_on = on
         self._label_memory()
+        self._update_dot()
 
     def _label_memory(self) -> None:
         es = self.lang == "es"
         self.btn_memory.setText(("Pausar memoria" if es else "Pause memory") if self.memory_on
                                 else ("Reanudar memoria" if es else "Resume memory"))
+
+    # --- global shortcut -------------------------------------------------------------------------
+    def _label_hotkey(self) -> None:
+        combo = self.hotkeys.current.get("open", "-") if self.hotkeys else "-"
+        self.btn_hotkey.setText(self.agent.t("hotkey_label", combo=combo))
+        self.btn_hotkey.setEnabled(self.hotkeys is not None)
+
+    def _start_capture(self) -> None:
+        self.capturing = True
+        self.btn_default.show()
+        self.field.setFocus()
+        self._show_status(self.agent.t("hotkey_press"))
+
+    def _end_capture(self, line: str = "") -> None:
+        self.capturing = False
+        self.btn_default.hide()
+        self._label_hotkey()
+        self._show_status(line)
+
+    def _apply_hotkey(self, combo: str) -> None:
+        old = self.hotkeys.current.get("open", "-")
+        if self.hotkeys.set("open", combo):
+            self.state["hotkey"] = self.hotkeys.current["open"]
+            self._save_state()
+            self._end_capture(self.agent.t("hotkey_saved", combo=self.hotkeys.current["open"]))
+        else:
+            self._end_capture(self.agent.t("hotkey_taken", combo=combo, old=old))
+
+    def _restore_default(self) -> None:
+        self._apply_hotkey(DEFAULT_OPEN)
+
+    def eventFilter(self, obj, event) -> bool:
+        if self.capturing and obj is self.field and event.type() == QEvent.KeyPress:
+            if event.key() == Qt.Key_Escape:
+                self._end_capture()
+                return True
+            combo = from_key_event(event.key(), event.modifiers())
+            if combo is None:
+                return True                      # only modifiers so far: keep waiting
+            if not combo:
+                self._show_status(self.agent.t("hotkey_need_mod"))
+                return True
+            self._apply_hotkey(combo)
+            return True
+        return super().eventFilter(obj, event)
 
     # --- events ---------------------------------------------------------------------------------
     def enterEvent(self, _event) -> None:
@@ -372,6 +466,8 @@ class Edith(QWidget):
     def changeEvent(self, event) -> None:
         # A click anywhere else deactivates the window: close back into the dot.
         if event.type() == event.Type.ActivationChange and not self.isActiveWindow() and self.expanded:
+            if self.capturing:
+                self._end_capture()
             self.collapse()
         super().changeEvent(event)
 
@@ -395,23 +491,30 @@ class Edith(QWidget):
         self._press = None
         if self._dragged:
             self.dot_pos = self.pos()
-            self._save_position()
+            self.state.update(x=self.dot_pos.x(), y=self.dot_pos.y())
+            self._save_state()
         elif not self.expanded:
             self.expand()
 
-    # --- position -------------------------------------------------------------------------------
-    def _load_position(self) -> QPoint:
+    # --- saved state -----------------------------------------------------------------------------
+    def _load_state(self) -> dict:
         try:
-            data = json.loads(POSITION_FILE.read_text(encoding="utf-8"))
-            return QPoint(int(data["x"]), int(data["y"]))
-        except (OSError, ValueError, KeyError, TypeError):
+            data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _initial_position(self) -> QPoint:
+        try:
+            return QPoint(int(self.state["x"]), int(self.state["y"]))
+        except (KeyError, TypeError, ValueError):
             from PySide6.QtGui import QGuiApplication
             g = QGuiApplication.primaryScreen().availableGeometry()
             return QPoint(g.right() - DOT - 2 * M - 12, g.top() + int(g.height() * 0.62))
 
-    def _save_position(self) -> None:
+    def _save_state(self) -> None:
         try:
-            POSITION_FILE.parent.mkdir(parents=True, exist_ok=True)
-            POSITION_FILE.write_text(json.dumps({"x": self.dot_pos.x(), "y": self.dot_pos.y()}), encoding="utf-8")
+            STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            STATE_FILE.write_text(json.dumps(self.state), encoding="utf-8")
         except OSError:
-            log.debug("could not save the dot's position", exc_info=True)
+            log.debug("could not save the panel's state", exc_info=True)

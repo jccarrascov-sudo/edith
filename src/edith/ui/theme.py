@@ -23,14 +23,17 @@ class Palette:
     text: str
     muted: str         # secondary text, the agent's status line
     idle: str          # the dot when nothing is happening
+    paused: str        # the dot while the memory is paused: dimmer than idle
     accent: str = ACCENT
     shadow_alpha: float = 0.55   # how strong both shadows are
 
 
 LIGHT = Palette(bg="#E6E9EF", shadow_light="#FFFFFF", shadow_dark="#A3B1C6",
-                text="#3B4048", muted="#8A919C", idle="#A9AFB9", shadow_alpha=0.6)
+                text="#3B4048", muted="#8A919C", idle="#A9AFB9", paused="#CDD2DA",
+                shadow_alpha=0.6)
 DARK = Palette(bg="#23262B", shadow_light="#2D3036", shadow_dark="#191B1F",
-               text="#D4D7DD", muted="#7C828C", idle="#555B64", shadow_alpha=0.9)
+               text="#D4D7DD", muted="#7C828C", idle="#555B64", paused="#383C42",
+               shadow_alpha=0.9)
 
 
 def blend(a: Palette, b: Palette, t: float) -> Palette:

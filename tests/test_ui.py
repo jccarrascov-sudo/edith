@@ -15,11 +15,12 @@ os.environ.setdefault("EDITH_HOME", tempfile.mkdtemp(prefix="edith-test-"))
 
 from PySide6.QtCore import QRectF  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from edith.ui import agent, stats, theme  # noqa: E402
+from edith.ui import agent, hotkey, stats, theme  # noqa: E402
 from edith.workshop import build  # noqa: E402
 
-_app = QGuiApplication.instance() or QGuiApplication(["test", "-platform", "offscreen"])
+_app = QGuiApplication.instance() or QApplication(["test", "-platform", "offscreen"])
 
 
 class PaletteTests(unittest.TestCase):
@@ -120,6 +121,119 @@ class RenameTests(unittest.TestCase):
         out = subprocess.run([sys.executable, "-c", "from edith.config import ROOT; print(ROOT)"],
                              capture_output=True, text=True, env=env, check=True)
         self.assertEqual(Path(out.stdout.strip()), Path(old))
+
+
+class HotkeyTests(unittest.TestCase):
+    def test_combinations_are_parsed_and_normalized(self):
+        self.assertEqual(hotkey.normalize("ctrl+alt+e"), "Ctrl+Alt+E")
+        self.assertEqual(hotkey.normalize("Alt + Ctrl + F5"), "Ctrl+Alt+F5")
+        self.assertEqual(hotkey.parse("Ctrl+Alt+E"), (0x0002 | 0x0001, ord("E")))
+        for bad in ("E", "Ctrl", "Ctrl+", "Ctrl+Alt", "Hyper+E", "Ctrl+Enter", "Ctrl+F25"):
+            self.assertIsNone(hotkey.normalize(bad), bad)
+
+    def test_key_presses_need_a_modifier_and_a_key(self):
+        from PySide6.QtCore import Qt
+
+        both = Qt.ControlModifier | Qt.AltModifier
+        self.assertEqual(hotkey.from_key_event(Qt.Key_K, both), "Ctrl+Alt+K")
+        self.assertEqual(hotkey.from_key_event(Qt.Key_F9, Qt.MetaModifier), "Win+F9")
+        self.assertIsNone(hotkey.from_key_event(Qt.Key_Control, Qt.ControlModifier))  # keep waiting
+        self.assertEqual(hotkey.from_key_event(Qt.Key_K, Qt.NoModifier), "")             # no modifier
+        self.assertEqual(hotkey.from_key_event(Qt.Key_Return, both), "")                 # unsupported key
+
+    def test_a_taken_combination_is_refused_and_the_old_one_kept(self):
+        owner, other = hotkey.GlobalHotkeys(), hotkey.GlobalHotkeys()
+        try:
+            self.assertTrue(owner.set("open", "Ctrl+Alt+Shift+F23"))
+            self.assertTrue(other.set("open", "Ctrl+Alt+Shift+F22"))
+            self.assertFalse(other.set("open", "Ctrl+Alt+Shift+F23"))   # another "app" has it
+            self.assertEqual(other.current["open"], "Ctrl+Alt+Shift+F22")
+            other.clear("open")
+            self.assertTrue(owner.set("open", "Ctrl+Alt+Shift+F22"))    # freed, so it can be taken
+        finally:
+            owner.close()
+            other.close()
+
+
+class PanelTests(unittest.TestCase):
+    def setUp(self):
+        from edith.config import load_config
+        from edith.ui import panel
+
+        self.panel_mod = panel
+        panel.STATE_FILE.unlink(missing_ok=True)
+        self.hotkeys = hotkey.GlobalHotkeys()
+        with mock.patch.object(theme, "windows_is_light", return_value=True):
+            self.theme = theme.Theme()
+        self.edith = panel.Edith(self.theme, agent.Agent(load_config()),
+                                 panel.Actions(toggle_audio=None, toggle_memory=lambda: False,
+                                               open_activity=lambda _p: None, quit=lambda: None),
+                                 self.hotkeys)
+
+    def tearDown(self):
+        self.hotkeys.close()
+        self.edith.deleteLater()
+
+    def press(self, key, mods):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QKeyEvent
+
+        QApplication.sendEvent(self.edith.field, QKeyEvent(QEvent.KeyPress, key, mods))
+
+    def test_dot_and_circle_share_the_widget_center(self):
+        ring, dot = self.edith.dot_geometry()
+        widget_center = QRectF(self.edith.rect()).center()
+        self.assertEqual(ring.center(), widget_center)
+        self.assertEqual(dot, widget_center)
+        self.assertEqual(ring.width(), self.panel_mod.DOT)
+        m = self.panel_mod.M
+        self.assertEqual((ring.left(), ring.top()), (m, m))                    # same margin all round
+        self.assertEqual(self.edith.width() - ring.right(), m)
+
+    def test_paused_memory_dims_the_dot(self):
+        self.assertEqual(self.edith._dot_target(), theme.LIGHT.idle)
+        self.edith.set_memory_on(False)
+        self.assertEqual(self.edith._dot_target(), theme.LIGHT.paused)
+        self.assertNotEqual(theme.LIGHT.paused, theme.LIGHT.idle)
+
+    def test_default_shortcut_is_registered(self):
+        self.assertEqual(self.hotkeys.current.get("open"), hotkey.DEFAULT_OPEN)
+        self.assertIn(hotkey.DEFAULT_OPEN, self.edith.btn_hotkey.text())
+
+    def test_new_shortcut_is_captured_saved_and_applied(self):
+        from PySide6.QtCore import Qt
+
+        self.edith._start_capture()
+        self.assertIn("Esc", self.edith.status.text())
+        self.press(Qt.Key_Control, Qt.ControlModifier)          # modifier alone: still waiting
+        self.assertTrue(self.edith.capturing)
+        self.press(Qt.Key_K, Qt.NoModifier)                      # no modifier: refused, still waiting
+        self.assertTrue(self.edith.capturing)
+        self.press(Qt.Key_F21, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)
+        self.assertFalse(self.edith.capturing)
+        self.assertEqual(self.hotkeys.current["open"], "Ctrl+Alt+Shift+F21")
+        saved = json.loads(self.panel_mod.STATE_FILE.read_text(encoding="utf-8"))
+        self.assertEqual(saved["hotkey"], "Ctrl+Alt+Shift+F21")
+        self.edith._start_capture()
+        self.edith._restore_default()
+        self.assertEqual(self.hotkeys.current["open"], hotkey.DEFAULT_OPEN)
+
+    def test_taken_shortcut_keeps_the_old_one_and_esc_cancels(self):
+        from PySide6.QtCore import Qt
+
+        other = hotkey.GlobalHotkeys()
+        try:
+            self.assertTrue(other.set("x", "Ctrl+Alt+Shift+F20"))
+            self.edith._start_capture()
+            self.press(Qt.Key_F20, Qt.ControlModifier | Qt.AltModifier | Qt.ShiftModifier)
+            self.assertEqual(self.hotkeys.current["open"], hotkey.DEFAULT_OPEN)
+            self.assertIn(hotkey.DEFAULT_OPEN, self.edith.status.text())
+            self.edith._start_capture()
+            self.press(Qt.Key_Escape, Qt.NoModifier)
+            self.assertFalse(self.edith.capturing)
+            self.assertEqual(self.hotkeys.current["open"], hotkey.DEFAULT_OPEN)
+        finally:
+            other.close()
 
 
 if __name__ == "__main__":

@@ -17,10 +17,18 @@ The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
 Edith stays out of the way. Rule: if something is not needed right now, it is not shown.
 
 - **At rest** it is a single 40 px soft dot, always on top and draggable, with no text or
-  icon. The dot's center is the only status indicator: gray when idle, the accent color
-  while thinking or acting (a soft fade, never an animation).
+  icon. The dot's center is the only status indicator: gray when idle, a dimmer gray while
+  the memory is paused, the accent color while thinking or acting (a soft fade, never an
+  animation). The status dot and the raised circle are drawn from the same rectangle, so
+  they share one geometric center, with equal margins all round for the shadows.
+- **Ctrl+Alt+E** (a global shortcut) opens and closes the panel from any app, with the
+  cursor in the text field. It can be changed in the options: *"Press the combination…"*,
+  a modifier plus a key is required, Esc cancels, a combination another app already uses is
+  refused (the old one stays), and *Default* restores Ctrl+Alt+E. It is saved and applied
+  at once.
 - **Click** the dot and it opens into a panel with one text field and the answer under it.
-  The audio button (system audio on/off) and the options (Activity, Pause memory, Quit)
+  The audio button (system audio on/off) and the options (Activity, Pause memory, Quit,
+  Shortcut)
   fade in only while the mouse is over the panel. Esc or a click elsewhere closes it back
   into the dot.
 - **Agent mode** draws nothing on the screen: no overlays, no outlines. Progress is one line
@@ -251,6 +259,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Invoice Portal v1/v2/v3 + 30-invoice Excel with hard cases + demo reset | done |
 | Pre-commit hook and privacy-guard GitHub Action | done |
 | Minimal soft-UI interface: dot, one-field panel, agent status line, confirm with Enter/Esc | done |
+| Global shortcut (default Ctrl+Alt+E), customizable from the panel; dimmer dot while paused | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |
 | Compile down: network level learned from the verified machine's own request in the sandbox (allow-listed domains), verified by equivalence | done |

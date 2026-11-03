@@ -112,3 +112,22 @@ Numbers are from real runs; failures are listed too.
     D. one demo by hand in v3 (simulated): new machine, 33/33, network level; 28 sent in
        0.6 s; 29/29 exact.
 - Not done: the visible screen-level fallback with SAM (cut, as planned).
+
+## Final version, Phase 2 - Interface additions (Nov 3)
+- Dot: a third state, dimmer gray while the memory is paused (both palettes). The raised
+  circle and the status dot are now computed from one rectangle (the widget's, minus equal
+  margins), so they cannot drift apart. Measured on the real desktop (DPR 1.0): widget
+  76x76 at (1196, 558); circle center = dot center = (38, 38) in the widget = (1234, 596) on
+  screen; the pixel at that center is exactly the idle color.
+- Global shortcut (`ui/hotkey.py`, Win32 RegisterHotKey on its own message-loop thread):
+  default Ctrl+Alt+E opens/closes the panel with the cursor in the field (checked live:
+  open + active + focused, then closed). Options -> "Shortcut: Ctrl+Alt+E": "Press the
+  combination... (Esc cancels)", modifier + one key required (letter, digit, F1-F24, Space),
+  a combination owned by another app is refused and the old one kept, "Default" restores it;
+  saved in state/ui.json and applied at once.
+- The options no longer fit one line in Spanish (buttons were cut); they are now two short
+  lines above the hover buttons.
+- 11 new tests (parsing, key capture, a really taken combination, persistence, centers,
+  paused color): 114 pass.
+- Not yet: latency and cost sparklines in the metrics view (they need the Phase 3 engine).
+

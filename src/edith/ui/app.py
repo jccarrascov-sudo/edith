@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QApplication
 
 from ..config import Config
 from .agent import Agent
+from .hotkey import GlobalHotkeys
 from .panel import Actions, Edith
 from .stats import Sampler, StatsView
 from .theme import Theme
@@ -90,6 +91,7 @@ def main(cfg: Config, memory: bool = True) -> int:
     sampler_stop = threading.Event()
     theme = Theme()
     agent = Agent(cfg)
+    hotkeys = GlobalHotkeys()
     stats = StatsView(cfg, theme, Sampler(cfg, sampler_stop), agent.lang)
 
     def open_activity(panel: Edith) -> None:
@@ -98,7 +100,7 @@ def main(cfg: Config, memory: bool = True) -> int:
 
     edith = Edith(theme, agent, Actions(
         toggle_audio=mem.toggle_audio if cfg.audio["enabled"] else None,
-        toggle_memory=mem.toggle, open_activity=open_activity, quit=app.quit))
+        toggle_memory=mem.toggle, open_activity=open_activity, quit=app.quit), hotkeys)
     edith.set_memory_on(mem.running)
     edith.show()
     try:
@@ -106,6 +108,7 @@ def main(cfg: Config, memory: bool = True) -> int:
     finally:
         mem.stop()
         sampler_stop.set()
+        hotkeys.close()
 
 
 def launch() -> None:

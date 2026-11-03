@@ -57,6 +57,12 @@ TEXT = {
         "done_failed": ", {n} failed",
         "failed": "Something went wrong, so I stopped: {error}",
         "nothing": "There is nothing left to send.",
+        "hotkey_label": "Shortcut: {combo}",
+        "hotkey_press": "Press the combination… (Esc cancels)",
+        "hotkey_need_mod": "Use Ctrl, Alt, Shift or Win plus a letter, digit or F key.",
+        "hotkey_taken": "{combo} is already used by another app. Keeping {old}.",
+        "hotkey_saved": "Shortcut: {combo}.",
+        "hotkey_default": "Default",
     },
     "es": {
         "placeholder": "Pregunta por los últimos 10 minutos, o di “haz el resto”",
@@ -89,6 +95,12 @@ TEXT = {
         "done_failed": ", {n} con error",
         "failed": "Algo falló y me detuve: {error}",
         "nothing": "No queda nada por enviar.",
+        "hotkey_label": "Atajo: {combo}",
+        "hotkey_press": "Presiona la combinación… (Esc cancela)",
+        "hotkey_need_mod": "Usa Ctrl, Alt, Shift o Win más una letra, un número o una tecla F.",
+        "hotkey_taken": "Otra app ya usa {combo}. Se mantiene {old}.",
+        "hotkey_saved": "Atajo: {combo}.",
+        "hotkey_default": "Por defecto",
     },
 }
 

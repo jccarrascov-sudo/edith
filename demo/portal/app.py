@@ -1,10 +1,10 @@
-"""Invoice Portal: a small local web app used as Pantallita's controlled demo environment.
+"""Invoice Portal: a small local web app used as Edith's controlled demo environment.
 
 v1: form with client, tax ID, date, amount, description (in that order).
 v2: the same portal, but the amount field is moved to the top and renamed
     ("Total due", name="total_due") — used for the automatic repair scene.
 v3: two amount fields, "Amount - subtotal" (optional, stored in `subtotal`) and "Amount -
-    total" (stored in `amount`) — an ambiguous change: Pantallita must ask "Show me one".
+    total" (stored in `amount`) — an ambiguous change: Edith must ask "Show me one".
 Submissions are stored in SQLite. The stored columns are the same in every version, so a
 tool's result can be compared field by field against the user's demonstration.
 

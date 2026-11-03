@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pantallita safety hook: never commit secrets or private capture data.
+# Edith safety hook: never commit secrets or private capture data.
 # Installed with: .venv\Scripts\python scripts\install_hooks.py  (sets core.hooksPath=.githooks)
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)

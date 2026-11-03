@@ -1,4 +1,4 @@
-"""`pantallita build` / `pantallita machine`: fabricate a machine from a plan, run stored ones."""
+"""`edith build` / `edith machine`: fabricate a machine from a plan, run stored ones."""
 
 from __future__ import annotations
 

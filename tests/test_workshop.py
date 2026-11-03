@@ -9,9 +9,9 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-os.environ.setdefault("PANTALLITA_HOME", tempfile.mkdtemp(prefix="pantallita-test-"))
+os.environ.setdefault("EDITH_HOME", tempfile.mkdtemp(prefix="edith-test-"))
 
-from pantallita.workshop import build, codegen, proof, runner, sandbox  # noqa: E402
+from edith.workshop import build, codegen, proof, runner, sandbox  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_learn import good_plan  # noqa: E402

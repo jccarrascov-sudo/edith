@@ -17,7 +17,7 @@ from ..memory.timeline import Timeline
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are pantallita, an on-screen companion with a short memory of the user's computer.
+You are Edith, a desktop assistant with a short memory of the user's computer.
 You receive what happened during the last {minutes} minutes:
 - a window history (which app/window was in front, with local times),
 - the user's clicks (with the UI element under them) and the values text fields settled on,
@@ -187,36 +187,43 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
     return messages, stats
 
 
-def ask(cfg: Config, question: str, dry_run: bool = False) -> str:
-    timeline = Timeline(cfg)
-    messages, stats = build_messages(cfg, timeline, question)
-    summary = (f"[pantallita] sending {stats['images']} images ({stats['image_kb']} KB base64, "
-               f"{stats['frames_available']} frames in buffer), {stats['transcript_segments']} "
-               f"transcript segments, {stats['window_changes']} window events, {stats['actions']} actions")
-    print(summary, file=sys.stderr)
-    if dry_run:
-        print(stats["context_text"])
-        return ""
-
+def answer(cfg: Config, question: str) -> tuple[str, str]:
+    """Muse Spark's answer about the last minutes, plus a one-line usage report."""
     from .client import MetaClient
 
+    messages, stats = build_messages(cfg, Timeline(cfg), question)
     client = MetaClient(cfg)
     t0 = time.monotonic()
     response = client.chat(
         "ask", messages=messages, max_tokens=cfg.ask["max_output_tokens"],
         reasoning_effort=cfg.ask["reasoning_effort"])
-    answer = response.choices[0].message.content or ""
-    print(answer)
-
+    text = response.choices[0].message.content or ""
+    report = ""
     usage = response.usage
     if usage:
         details = getattr(usage, "completion_tokens_details", None)
         reasoning = getattr(details, "reasoning_tokens", None) if details else None
         cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0) or 0
-        print(f"[pantallita] {client.model}: {usage.prompt_tokens} input tokens ({cached} cached), "
-              f"{usage.completion_tokens} output tokens"
-              + (f" ({reasoning} reasoning)" if reasoning else "")
-              + f", {stats['images']} images, {time.monotonic() - t0:.1f}s, "
-              f"${response.pantallita_cost:.4f}", file=sys.stderr)
-        print(f"[pantallita] {client.meter.summary()}", file=sys.stderr)
-    return answer
+        report = (f"{client.model}: {usage.prompt_tokens} input tokens ({cached} cached), "
+                  f"{usage.completion_tokens} output tokens"
+                  + (f" ({reasoning} reasoning)" if reasoning else "")
+                  + f", {stats['images']} images, {time.monotonic() - t0:.1f}s, "
+                  f"${response.edith_cost:.4f}. {client.meter.summary()}")
+    return text, report
+
+
+def ask(cfg: Config, question: str, dry_run: bool = False) -> str:
+    """`edith ask`: the same answer, printed (context and usage go to stderr)."""
+    messages, stats = build_messages(cfg, Timeline(cfg), question)
+    print(f"[edith] sending {stats['images']} images ({stats['image_kb']} KB base64, "
+          f"{stats['frames_available']} frames in buffer), {stats['transcript_segments']} "
+          f"transcript segments, {stats['window_changes']} window events, {stats['actions']} actions",
+          file=sys.stderr)
+    if dry_run:
+        print(stats["context_text"])
+        return ""
+    text, report = answer(cfg, question)
+    print(text)
+    if report:
+        print(f"[edith] {report}", file=sys.stderr)
+    return text

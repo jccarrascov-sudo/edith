@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import queue
 import threading
 import time
@@ -103,7 +104,7 @@ class ClickWatcher:
     def _callback(self, code: int, wparam: int, lparam: int) -> int:
         if code >= 0 and wparam in BUTTONS:
             data = ctypes.cast(lparam, ctypes.POINTER(MSLLHOOKSTRUCT)).contents
-            # Clicks injected by software (e.g. Pantallita's own fallback mode) are not the user's.
+            # Clicks injected by software (e.g. Edith's own fallback mode) are not the user's.
             if data.flags & LLMHF_INJECTED:
                 self.injected_clicks += 1
             else:
@@ -208,8 +209,8 @@ class FieldWatcher:
         if self.cfg.is_excluded(title, process):
             return "excluded"
         control = auto.GetFocusedControl()
-        if control is None:
-            return None
+        if control is None or control.ProcessId == os.getpid():
+            return None  # nothing focused, or Edith's own text field (questions are not memory)
         kind = uia.INTERACTIVE.get(control.ControlTypeName)
         if kind not in self.FIELD_KINDS:
             return None

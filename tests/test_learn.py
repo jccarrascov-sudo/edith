@@ -12,12 +12,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-os.environ.setdefault("PANTALLITA_HOME", tempfile.mkdtemp(prefix="pantallita-test-"))
+os.environ.setdefault("EDITH_HOME", tempfile.mkdtemp(prefix="edith-test-"))
 
-from pantallita import config  # noqa: E402
-from pantallita.learn import plan as plan_mod  # noqa: E402
-from pantallita.learn import segment as seg_mod  # noqa: E402
-from pantallita.learn import source as src_mod  # noqa: E402
+from edith import config  # noqa: E402
+from edith.learn import plan as plan_mod  # noqa: E402
+from edith.learn import segment as seg_mod  # noqa: E402
+from edith.learn import source as src_mod  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "demo"))
 import make_invoices  # noqa: E402
@@ -90,7 +90,7 @@ class SegmentTests(unittest.TestCase):
 
     def test_terminal_where_the_user_asks_is_ignored(self):
         events = demo_events(self.rows[0])
-        events += [field(100, "Command", "pantallita do", where=("Terminal", "WindowsTerminal.exe")),
+        events += [field(100, "Command", "edith do", where=("Terminal", "WindowsTerminal.exe")),
                    field(102, "Other", "x", where=("Terminal", "WindowsTerminal.exe"))]
         self.assertEqual(len(seg_mod.find_demos(events)), 1)
 
@@ -219,7 +219,7 @@ class PlanTests(unittest.TestCase):
         def chat(purpose, messages, **kwargs):
             sent.append(json.dumps(messages[-1]["content"]) if isinstance(messages[-1]["content"], str) else "")
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=next(replies)))],
-                                   pantallita_cost=0.0)
+                                   edith_cost=0.0)
 
         cfg = config.load_config(Path(config.ROOT) / "missing.toml")
         with mock.patch.object(src_mod, "find_workbook", lambda titles: self.path):

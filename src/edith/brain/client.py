@@ -5,7 +5,7 @@ Every paid call goes through `MetaClient`, which
   2. refuses to call once the session cost passed the configured limit (default $5),
   3. records the real usage of each call in state/costs.jsonl (local, git-ignored).
 
-A session ends after `budget.session_idle_hours` without calls, or with `pantallita cost --new`.
+A session ends after `budget.session_idle_hours` without calls, or with `edith cost --new`.
 """
 
 from __future__ import annotations
@@ -97,7 +97,7 @@ class CostMeter:
             raise BudgetExceeded(
                 f"Session cost ${self.session.cost:.4f} reached the ${self.limit:.2f} limit. "
                 "Raise budget.session_limit_usd in config.toml or start a new session "
-                "(python -m pantallita cost --new).")
+                "(python -m edith cost --new).")
 
     def record(self, model: str, purpose: str, input_tokens: int = 0, cached_tokens: int = 0,
                output_tokens: int = 0, images: int = 0) -> float:
@@ -145,7 +145,7 @@ class MetaClient:
         u = response.usage
         cached = getattr(getattr(u, "prompt_tokens_details", None), "cached_tokens", 0) or 0
         cost = self.meter.record(model, purpose, u.prompt_tokens, cached, u.completion_tokens)
-        response.pantallita_cost = cost
+        response.edith_cost = cost
         return response
 
     def segment(self, purpose: str, image_data_url: str, prompt: str, model: str = "sam-3.1") -> list[dict]:

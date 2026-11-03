@@ -1,15 +1,39 @@
-# Pantallita
+# Edith
 
-**Your screen has an inventor.**
+**Do it once. Edith does the rest.**
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie Developer track).
 
-An on-screen companion that remembers the last ~10 minutes of your screen and system audio,
-so you can ask it what just happened: *"what was the video about?"*, *"what was that error
-in the terminal 5 minutes ago?"*. Later phases will let it act on the computer while
-visually showing what it is about to touch (with SAM 3).
+A minimal desktop assistant that remembers the last ~10 minutes of your screen and system
+audio, so you can ask it what just happened: *"what was the video about?"*, *"what was that
+error in the terminal 5 minutes ago?"*. Do a task once by hand and say *"do the rest"*: it
+learns the task from its memory, builds a machine, verifies it against what you did, and
+runs it on the remaining rows after you confirm.
 
 The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
+
+## The interface
+
+Edith stays out of the way. Rule: if something is not needed right now, it is not shown.
+
+- **At rest** it is a single 40 px soft dot, always on top and draggable, with no text or
+  icon. The dot's center is the only status indicator: gray when idle, the accent color
+  while thinking or acting (a soft fade, never an animation).
+- **Click** the dot and it opens into a panel with one text field and the answer under it.
+  The audio button (system audio on/off) and the options (Activity, Pause memory, Quit)
+  fade in only while the mouse is over the panel. Esc or a click elsewhere closes it back
+  into the dot.
+- **Agent mode** draws nothing on the screen: no overlays, no outlines. Progress is one line
+  of gray text in the panel (*"Writing row 3 of 29 in 127.0.0.1:8765…"*). Before sending,
+  the panel shows what will be sent (rows, totals, skipped rows); Enter sends, Esc cancels.
+- **Activity** opens a separate view with RAM, VRAM and the memory's activity over the last
+  10 minutes: the number large, a 1.75 px accent sparkline under it for the trend, a faint
+  fill, no axes, grid or legend; the exact value is in a tooltip under the mouse.
+- **Soft UI**: one flat background color shared by the panel and the buttons; relief comes
+  only from two soft shadows (light up-left, dark down-right), inset when pressed; no
+  borders or dividers, 16-24 px corners, one accent color, everything else gray.
+- **Light and dark** follow the Windows app theme live, without restarting: every color is
+  a variable with a light and a dark set, and a theme change fades over 250 ms.
 
 ## How it works: memory (Phase 1)
 
@@ -22,7 +46,7 @@ The brain is **Muse Spark** (`muse-spark-1.3`) through the Meta Model API.
                                                                                              ▼
                                               buffer/timeline.jsonl (rolling 10-minute window)
                                                                                              │
- pantallita ask "..." ◄── Muse Spark ◄── transcript + windows + actions + 8-12 key frames ◄─┘
+ edith ask "..." ◄── Muse Spark ◄── transcript + windows + actions + 8-12 key frames ◄─┘
 ```
 
 - **Capture** saves a frame only when the screen changed (>2% mean difference) or every 30 s.
@@ -55,18 +79,20 @@ copy .env.example .env   # then put your Meta Model API key in MODEL_API_KEY
 ## Usage
 
 ```powershell
-.venv\Scripts\python -m pantallita run              # Ctrl+C to stop
-.venv\Scripts\python -m pantallita ask "what was the video about?"
-.venv\Scripts\python -m pantallita ask "..." --dry-run   # show the context, no API call
-.venv\Scripts\python -m pantallita status
-.venv\Scripts\python -m pantallita do "what I did 3 minutes ago, do it with the rest"
+.venv\Scripts\edith-ui                          # Edith on screen (no console window)
+.venv\Scripts\edith                             # the same, from a console
+.venv\Scripts\python -m edith run              # memory only, Ctrl+C to stop
+.venv\Scripts\python -m edith ask "what was the video about?"
+.venv\Scripts\python -m edith ask "..." --dry-run   # show the context, no API call
+.venv\Scripts\python -m edith status
+.venv\Scripts\python -m edith do "what I did 3 minutes ago, do it with the rest"
 .venv\Scripts\python -m unittest discover -s tests       # tests
 .venv\Scripts\python scripts\measure_tokens.py           # token measurements (counts only)
 ```
 
 ## How it works: learning backwards (Phase 2)
 
-Nothing has to be switched on before the task: Pantallita rewinds its memory.
+Nothing has to be switched on before the task: Edith rewinds its memory.
 
 1. **Find the demonstration.** A *form episode* is a run of text fields filled in one app
    and one page (≤ 90 s between edits), plus the clicks around it, ending with the button
@@ -122,9 +148,9 @@ Nothing has to be switched on before the task: Pantallita rewinds its memory.
    skipped; the run goes on.
 
 ```powershell
-.venv\Scripts\python -m pantallita build            # latest plan -> verified machine -> run the rest
-.venv\Scripts\python -m pantallita machine          # list the workshop
-.venv\Scripts\python -m pantallita machine "invoice runner"
+.venv\Scripts\python -m edith build            # latest plan -> verified machine -> run the rest
+.venv\Scripts\python -m edith machine          # list the workshop
+.venv\Scripts\python -m edith machine "invoice runner"
 ```
 
 Real runs on portal v1 (the user's own demo in Edge):
@@ -165,9 +191,9 @@ API key or token. The `privacy-guard` GitHub Action fails if any such file is tr
 [code](https://github.com/Westlake-AGI-Lab/AppAgentX)) is the closest idea we know of: a
 smartphone GUI agent that keeps a memory of its *own* task executions, spots repetitive action
 sequences and evolves them into high-level "shortcut" actions, so later runs need fewer
-reasoning steps. Pantallita is designed around different choices:
+reasoning steps. Edith is designed around different choices:
 
-| | AppAgentX | Pantallita |
+| | AppAgentX | Edith |
 |---|---|---|
 | Learns from | the agent's own past executions | a **human demonstration**, even retroactively: you do the task once, then ask, without having pressed "record" |
 | What it produces | higher-level GUI actions, still executed on screen by the agent | **code** (a plan of Playwright blocks) that does the task directly, **without touching the screen** or the mouse |
@@ -192,9 +218,9 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Text contract per block, anti-cheat check, 2 extra verification rows, proof included, dry run before use | done |
 | Invoice Portal v1/v2/v3 + 30-invoice Excel with hard cases + demo reset | done |
 | Pre-commit hook and privacy-guard GitHub Action | done |
-| Launch gesture (lasso, Excel COM selection, SAM crop into cards, throw onto a window) | (planned) |
-| Ghost fan preview with summary and confirm/cancel | (planned) |
-| Mascot overlay and tangible world (machine, cards, stamps, shelf, code-generated sounds) | (planned) |
+| Minimal soft-UI interface: dot, one-field panel, agent status line, confirm with Enter/Esc | done |
+| Activity view with sparklines (RAM, VRAM, memory activity) | done |
+| Light/dark theme following Windows live, with a fade | done |
 | Compile down: network level from the demo browser's requests (allow-listed domains) | (planned) |
 | Repair by intent (UIA/SAM relocation) and "Show me one" | (planned) |
 | Visible fallback mode with SAM highlight | (planned) |
@@ -221,10 +247,10 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | [meta-sam-parser](https://dev.meta.ai/) (Meta) | Building SAM 3.1 box/point prompts and decoding its masks | SAM License |
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
 | SAM 3.1 via the Meta Model API | Segmenting UI elements (remote API) | Meta terms |
-| Muse Image via the Meta Model API (planned) | Mascot look (optional) | Meta terms |
-| [PySide6-Essentials](https://doc.qt.io/qtforpython-6/) (Qt for Python) | Mascot window, launch gesture, ghost fan (drawn with QPainter) | LGPL-3.0 |
+| Muse Image via the Meta Model API | Only checked by `scripts/test_api.py`; not used by the app | Meta terms |
+| [PySide6-Essentials](https://doc.qt.io/qtforpython-6/) (Qt for Python) | The dot, the panel and the activity view (drawn with QPainter) | LGPL-3.0 |
 
-No images, sounds or other assets are included.
+No images, sounds, fonts or other assets are included: everything on screen is drawn by code.
 
 ## License
 

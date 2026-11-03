@@ -1,4 +1,4 @@
-"""Minimal live tests of the three Meta APIs Pantallita builds on. Every call is cost-metered.
+"""Minimal live tests of the three Meta APIs Edith builds on. Every call is cost-metered.
 
 1. Muse Spark 1.3: text, and image input (base64 data URL) with known content.
 2. SAM 3.1: a synthetic form with a button at a known position, segmented with a text
@@ -18,10 +18,10 @@ import traceback
 
 from PIL import Image, ImageDraw
 
-from pantallita.brain import tokens
-from pantallita.brain.client import STATE_DIR, MetaClient
-from pantallita.config import load_config
-from pantallita.vision import sam
+from edith.brain import tokens
+from edith.brain.client import STATE_DIR, MetaClient
+from edith.config import load_config
+from edith.vision import sam
 
 BUTTON = (330, 395, 530, 445)  # true button rectangle in the synthetic form
 
@@ -67,7 +67,7 @@ def test_sam(client: MetaClient) -> str:
     best = max(segs, key=lambda s: iou(s.box, BUTTON), default=None)
     out.append(f"text prompt 'button': {len(segs)} match(es), best box {best.box if best else None}, "
                f"IoU {iou(best.box, BUTTON) if best else 0:.2f}, {time.monotonic() - t0:.1f}s")
-    # Pantallita knows the click position and the UIA rectangle, so those are its prompts.
+    # Edith knows the click position and the UIA rectangle, so those are its prompts.
     # (A loose box with a ~30 px margin measured IoU 0.50: SAM expects a fairly tight box.)
     center = ((BUTTON[0] + BUTTON[2]) // 2, (BUTTON[1] + BUTTON[3]) // 2)
     uia_box = (BUTTON[0] - 8, BUTTON[1] - 8, BUTTON[2] + 8, BUTTON[3] + 8)
@@ -87,8 +87,8 @@ def test_sam(client: MetaClient) -> str:
 def test_image(client: MetaClient) -> str:
     r = client.generate_image(
         "test: muse image",
-        prompt=("a tiny friendly inventor character made of simple flat geometric shapes, soft rounded "
-                "edges, three colors, standing on a plain light background, original design"),
+        prompt=("a single soft gray circle on a plain light gray background, neumorphic soft UI, "
+                "subtle shadows, minimal, original design"),
         size="1024x1024", output_format="png")
     data = base64.b64decode(r.data[0].b64_json)
     path = STATE_DIR / "muse_image_test.png"

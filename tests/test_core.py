@@ -15,13 +15,13 @@ from unittest import mock
 
 import numpy as np
 
-TMP = tempfile.mkdtemp(prefix="pantallita-test-")
-os.environ["PANTALLITA_HOME"] = TMP  # must be set before importing pantallita.config
+TMP = tempfile.mkdtemp(prefix="edith-test-")
+os.environ["EDITH_HOME"] = TMP  # must be set before importing edith.config
 
-from pantallita import config  # noqa: E402
-from pantallita.brain import ask, tokens  # noqa: E402
-from pantallita.memory import audio, capture  # noqa: E402
-from pantallita.memory.timeline import Timeline  # noqa: E402
+from edith import config  # noqa: E402
+from edith.brain import ask, tokens  # noqa: E402
+from edith.memory import audio, capture  # noqa: E402
+from edith.memory.timeline import Timeline  # noqa: E402
 
 
 class FakeShot:

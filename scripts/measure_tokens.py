@@ -1,7 +1,7 @@
 """Measure the input tokens saved by each optimization, on real data, with the official counter.
 
 Uses POST /v1/responses/input_tokens (counts only, generates nothing).
-  1-2-4: the current buffer (run `pantallita run` for a few minutes first).
+  1-2-4: the current buffer (run `edith run` for a few minutes first).
   2-3:   a live screenshot + UI Automation tree of the current foreground window.
 
 Run: .venv\\Scripts\\python scripts\\measure_tokens.py
@@ -19,13 +19,13 @@ import urllib.request
 import mss
 from PIL import Image
 
-from pantallita.brain import tokens
-from pantallita.memory import uia
-from pantallita.brain.ask import ContextOptions, build_messages
-from pantallita.memory.capture import primary_monitor
-from pantallita.config import load_api_settings, load_config
-from pantallita.memory.timeline import Timeline
-from pantallita.memory.winutil import foreground_window
+from edith.brain import tokens
+from edith.memory import uia
+from edith.brain.ask import ContextOptions, build_messages
+from edith.memory.capture import primary_monitor
+from edith.config import load_api_settings, load_config
+from edith.memory.timeline import Timeline
+from edith.memory.winutil import foreground_window
 
 API = load_api_settings()
 

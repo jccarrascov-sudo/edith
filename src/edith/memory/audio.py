@@ -106,6 +106,7 @@ class AudioRecorder:
         self.transcriber = transcriber or Transcriber(cfg)
         self.chunks: queue.Queue[tuple[float, bytes, int]] = queue.Queue()
         self.blocks = self.silent_blocks = self.private_blocks = self.segments = 0
+        self.listening = True   # the panel's audio button: off = blocks are dropped unheard
 
     # --- device handling -------------------------------------------------
     @staticmethod
@@ -209,6 +210,8 @@ class AudioRecorder:
 
     def _process(self, block_start: float, audio: np.ndarray) -> None:
         self.blocks += 1
+        if not self.listening:
+            return
         if self.gate.blocked(block_start):
             self.private_blocks += 1
             log.debug("Dropped audio block: an excluded window was active")

@@ -1,4 +1,4 @@
-# Pantallita — Architecture
+# Edith — Architecture
 
 ## Memory (Phase 1)
 
@@ -16,7 +16,7 @@ speakers (WASAPI loopback, 15 s blocks) ──► silence gate ──► faster-
 - `actions.py`: `ClickWatcher` installs a low-level *mouse* hook (`WH_MOUSE_LL`) that only
   queues button presses; a second thread resolves the UIA element under each click (the hook
   callback must return fast) and triggers a 3 s capture burst. Clicks injected by software
-  (`LLMHF_INJECTED`, e.g. Pantallita's own fallback mode) are counted and ignored.
+  (`LLMHF_INJECTED`, e.g. Edith's own fallback mode) are counted and ignored.
   `FieldWatcher` polls the focused element every 0.5 s and logs an edit/combo value once it
   has been stable for 1.5 s or focus leaves the field, keyed by (process, type, name,
   AutomationId) so page-title changes do not duplicate it. Browsers build their UIA tree
@@ -24,15 +24,15 @@ speakers (WASAPI loopback, 15 s blocks) ──► silence gate ──► faster-
 - `audio.py`: system output only (never the microphone); silent blocks are not transcribed.
 - `timeline.py`: append-only JSONL shared between processes through a lock file; pruned every 5 s.
 - `uia.py`: UI Automation reader (visible elements, values via ValuePattern). Password fields
-  are never read. Nothing in Pantallita ever hooks the keyboard.
+  are never read. Nothing in Edith ever hooks the keyboard.
 - Privacy: while an excluded app (password managers, banks, private browsing) is in front,
   no frame, title, process name or audio block is kept (`PrivacyGate`).
 
 ## Token efficiency
 
 Every call to Muse Spark is billed per input token, and screenshots dominate the bill
-(~1,200 tokens for one 1280x720 frame). Pantallita applies four techniques, all in
-`src/pantallita/tokens.py` and wired into `ask.py`. Each is inspired by recent GUI-agent
+(~1,200 tokens for one 1280x720 frame). Edith applies four techniques, all in
+`src/edith/tokens.py` and wired into `ask.py`. Each is inspired by recent GUI-agent
 research. Those papers prune or compress inside the model; we only control what we send
 through an API, so we adapted the ideas to that setting.
 

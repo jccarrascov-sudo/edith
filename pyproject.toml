@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pantallita"
+name = "edith"
 version = "0.1.0"
-description = "An on-screen companion that remembers the last minutes of your screen and audio."
+description = "A minimal desktop assistant that remembers the last minutes of your screen and audio."
 requires-python = ">=3.12"
 dependencies = [
     "mss",
@@ -26,6 +26,12 @@ dependencies = [
     "playwright",
     "PySide6-Essentials",
 ]
+
+[project.scripts]
+edith = "edith.__main__:main"
+
+[project.gui-scripts]
+edith-ui = "edith.ui.app:launch"
 
 [tool.setuptools.packages.find]
 where = ["src"]

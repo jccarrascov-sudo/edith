@@ -1,6 +1,6 @@
 """SAM 3.1: the exact pixels of a UI element, from a text prompt or from a known box/point.
 
-Pantallita usually already knows roughly where an element is (UI Automation rectangle or
+Edith usually already knows roughly where an element is (UI Automation rectangle or
 the click position), so it sends a box/point prompt and gets back a tight box + mask, used
 to highlight the element (fallback mode, verification stamps, film strip).
 """

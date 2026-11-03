@@ -8,12 +8,12 @@ import time
 import unittest
 from pathlib import Path
 
-from pantallita.brain.client import BudgetExceeded, CostMeter, check_model, token_cost
+from edith.brain.client import BudgetExceeded, CostMeter, check_model, token_cost
 
 
 class CostTests(unittest.TestCase):
     def setUp(self):
-        self.dir = Path(tempfile.mkdtemp(prefix="pantallita-costs-"))
+        self.dir = Path(tempfile.mkdtemp(prefix="edith-costs-"))
 
     def test_prices_match_muse_spark_1_3(self):
         # 1M uncached input + 1M output = $1.25 + $4.25

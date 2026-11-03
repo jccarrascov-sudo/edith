@@ -1,4 +1,4 @@
-"""`pantallita do "..."`: find the demonstration, confirm it with the user, make the plan."""
+"""`edith do "..."`: find the demonstration, confirm it with the user, make the plan."""
 
 from __future__ import annotations
 

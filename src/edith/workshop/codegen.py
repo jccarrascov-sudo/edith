@@ -20,7 +20,7 @@ import re
 import time
 
 SYSTEM_PROMPT = """\
-You are Pantallita, a tiny inventor building a machine out of blocks. Each block is one
+You are Edith, a desktop assistant building a machine out of blocks. Each block is one
 small Python function using Playwright's SYNC API, exactly:
 
 def run(page, row, ctx):
@@ -165,7 +165,7 @@ def generate(client, plan: dict, snapshot: str, sample_row: dict, log_fn=print) 
                                      {"role": "user", "content": content}])
     code = parse_reply(response.choices[0].message.content)
     log_fn(f"  code for {len(code)} blocks ({time.monotonic() - t0:.1f}s, "
-           f"${getattr(response, 'pantallita_cost', 0):.4f})")
+           f"${getattr(response, 'edith_cost', 0):.4f})")
     return code
 
 
@@ -183,5 +183,5 @@ def regenerate(client, plan: dict, block: dict, old_code: str, problem: str, sna
                                      {"role": "user", "content": content}])
     code = parse_reply(response.choices[0].message.content)
     log_fn(f"  new code for {block['id']} ({time.monotonic() - t0:.1f}s, "
-           f"${getattr(response, 'pantallita_cost', 0):.4f})")
+           f"${getattr(response, 'edith_cost', 0):.4f})")
     return code.get(block["id"]) or next(iter(code.values()))

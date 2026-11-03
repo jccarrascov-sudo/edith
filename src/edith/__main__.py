@@ -1,4 +1,4 @@
-"""CLI entry point: python -m pantallita run | ask "question" | status"""
+"""CLI entry point: `edith` (opens Edith on screen) | edith run | ask "question" | status | ..."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ def run(cfg, duration: float | None = None) -> None:
     from .memory.audio import AudioRecorder
     from .memory.capture import PrivacyGate, ScreenCapture
 
-    log = logging.getLogger("pantallita")
+    log = logging.getLogger("edith")
     timeline = Timeline(cfg)
     timeline.prune()
     stop = threading.Event()
@@ -44,7 +44,7 @@ def run(cfg, duration: float | None = None) -> None:
     workers.append(threading.Thread(target=janitor, name="janitor", daemon=True))
     for w in workers:
         w.start()
-    log.info("pantallita is running. Press Ctrl+C to stop.")
+    log.info("edith is running. Press Ctrl+C to stop.")
     deadline = time.monotonic() + duration if duration else None
     try:
         # Short waits keep Ctrl+C responsive on Windows.
@@ -76,9 +76,9 @@ def _dpi_aware() -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="pantallita")
+    parser = argparse.ArgumentParser(prog="edith")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command")
     p_run = sub.add_parser("run", help="capture screen and system audio until Ctrl+C")
     p_run.add_argument("--duration", type=float, help="stop automatically after N seconds")
     p_ask = sub.add_parser("ask", help="ask a question about the last minutes")
@@ -93,24 +93,26 @@ def main(argv: list[str] | None = None) -> None:
     p_build = sub.add_parser("build", help="fabricate and verify a machine from a plan (default: the latest)")
     p_build.add_argument("plan", nargs="?", type=Path)
     p_build.add_argument("--yes", action="store_true", help="run it on the other rows without asking")
-    p_comp = sub.add_parser("companion", help="the inventor on screen (with memory running)")
-    p_comp.add_argument("--no-memory", action="store_true", help="only the inventor, no recording")
-    p_comp.add_argument("--duration", type=float, help="quit after N seconds (for tests)")
+    p_ui = sub.add_parser("ui", help="Edith on screen, with memory running (the default)")
+    p_ui.add_argument("--no-memory", action="store_true", help="start with memory paused")
+    p_ui.add_argument("--duration", type=float, help="quit after N seconds (for tests)")
     p_machine = sub.add_parser("machine", help="run a machine from the workshop (no name: list them)")
     p_machine.add_argument("name", nargs="?")
     p_machine.add_argument("--yes", action="store_true", help="send without asking")
     p_cost = sub.add_parser("cost", help="show the API cost of the current session")
     p_cost.add_argument("--new", action="store_true", help="start a new cost session")
     args = parser.parse_args(argv)
+    if args.command is None:  # plain `edith`: open it on screen
+        args = parser.parse_args((["-v"] if args.verbose else []) + ["ui"])
 
     logging.basicConfig(level=logging.WARNING,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
-    logging.getLogger("pantallita").setLevel(logging.DEBUG if args.verbose else logging.INFO)
+    logging.getLogger("edith").setLevel(logging.DEBUG if args.verbose else logging.INFO)
     # Windows consoles default to a legacy code page; window titles and answers need UTF-8.
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
-    if args.command != "companion":  # Qt sets per-monitor-v2 awareness itself
+    if args.command != "ui":  # Qt sets per-monitor-v2 awareness itself
         _dpi_aware()
     cfg = load_config()
     if args.command == "run":
@@ -136,14 +138,14 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "build":
         from .workshop.cli import build_and_run
         sys.exit(build_and_run(cfg, args.plan, confirm=not args.yes))
-    elif args.command == "companion":
-        from .ui.app import main as companion_main
+    elif args.command == "ui":
+        from .ui.app import main as ui_main
         if args.duration:
             from PySide6.QtCore import QTimer
             from PySide6.QtWidgets import QApplication
             app = QApplication(sys.argv)
             QTimer.singleShot(int(args.duration * 1000), app.quit)
-        sys.exit(companion_main(cfg, memory=not args.no_memory))
+        sys.exit(ui_main(cfg, memory=not args.no_memory))
     elif args.command == "machine":
         from .workshop.cli import find_tool, list_tools, run_machine
         if not args.name:

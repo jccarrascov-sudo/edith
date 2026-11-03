@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
-# Where the user talks to Pantallita: never part of a task.
+# Where the user talks to Edith: never part of a task.
 OWN_PROCESSES = {"windowsterminal.exe", "powershell.exe", "pwsh.exe", "cmd.exe", "conhost.exe",
                  "python.exe", "pythonw.exe", "code.exe"}
 

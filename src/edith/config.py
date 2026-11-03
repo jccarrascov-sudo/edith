@@ -9,8 +9,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# src/pantallita/config.py -> repo root
-ROOT = Path(os.environ.get("PANTALLITA_HOME", Path(__file__).resolve().parents[2]))
+# src/edith/config.py -> repo root. EDITH_HOME moves the data folder (buffer/, state/, tools/);
+# PANTALLITA_HOME is still read, from before the app was renamed.
+ROOT = Path(os.environ.get("EDITH_HOME") or os.environ.get("PANTALLITA_HOME")
+            or Path(__file__).resolve().parents[2])
 
 DEFAULTS: dict[str, dict] = {
     "capture": {
@@ -43,7 +45,7 @@ DEFAULTS: dict[str, dict] = {
         "reasoning_effort": "low",
     },
     "budget": {"session_limit_usd": 5.0, "session_idle_hours": 3},
-    "ui": {"language": "en", "launch_modifier": "ctrl"},
+    "ui": {"language": "en"},
     "exclude": {"titles": [], "processes": []},
 }
 

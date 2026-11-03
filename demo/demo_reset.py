@@ -2,7 +2,7 @@
 
 - Empties the portal database (also works while the portal is running).
 - Regenerates the 30-invoice Excel file.
-- Clears Pantallita's memory (buffer/: frames, audio, timeline).
+- Clears Edith's memory (buffer/: frames, audio, timeline).
 - Empties the workshop (tools/*, keeping tools/.gitkeep) and the learned plans (state/plans),
   unless --keep-tools is given.
 

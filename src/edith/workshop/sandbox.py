@@ -18,7 +18,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-# The demo portal's code ships with the repository (not under PANTALLITA_HOME, which is data).
+# The demo portal's code ships with the repository (not under EDITH_HOME, which is data).
 PORTAL_APP = Path(__file__).resolve().parents[3] / "demo" / "portal" / "app.py"
 IGNORED_COLUMNS = {"id", "created_at"}
 
@@ -82,7 +82,7 @@ class PortalSandbox:
     def __init__(self, url: str):
         self.target = url
         self.version = portal_info(url)["version"]
-        self.dir = Path(tempfile.mkdtemp(prefix="pantallita-sandbox-"))
+        self.dir = Path(tempfile.mkdtemp(prefix="edith-sandbox-"))
         self.db = self.dir / "sandbox.db"
         self.port = _free_port()
         self.proc: subprocess.Popen | None = None

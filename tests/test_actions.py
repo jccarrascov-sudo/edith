@@ -9,12 +9,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-os.environ.setdefault("PANTALLITA_HOME", tempfile.mkdtemp(prefix="pantallita-test-"))
+os.environ.setdefault("EDITH_HOME", tempfile.mkdtemp(prefix="edith-test-"))
 
-from pantallita import config  # noqa: E402
-from pantallita.brain import ask  # noqa: E402
-from pantallita.memory import actions, capture, uia  # noqa: E402
-from pantallita.memory.timeline import Timeline  # noqa: E402
+from edith import config  # noqa: E402
+from edith.brain import ask  # noqa: E402
+from edith.memory import actions, capture, uia  # noqa: E402
+from edith.memory.timeline import Timeline  # noqa: E402
 
 
 def fresh_config() -> config.Config:
@@ -132,6 +132,7 @@ class FieldTests(Base):
         class FakeControl:
             ControlTypeName = "EditControl"
             Name, AutomationId = "Password", "pw"
+            ProcessId = 1
 
             def GetPropertyValue(self, prop):
                 return True  # IsPassword
@@ -140,6 +141,17 @@ class FieldTests(Base):
                 raise AssertionError("the value of a password field must never be read")
 
         fake_auto = mock.Mock(GetFocusedControl=lambda: FakeControl())
+        self.assertIsNone(self.watcher._read_focused(fake_auto))
+
+    def test_edith_own_field_is_not_read(self):
+        class OwnField:
+            ControlTypeName = "EditControl"
+            ProcessId = os.getpid()
+
+            def GetPropertyValue(self, prop):
+                raise AssertionError("Edith's own text field must never be inspected")
+
+        fake_auto = mock.Mock(GetFocusedControl=lambda: OwnField())
         self.assertIsNone(self.watcher._read_focused(fake_auto))
 
 

@@ -46,3 +46,19 @@ Numbers are from real runs; failures are listed too.
   - sabotaged date block: dry proof failed and nothing was sent; repair changed only `b4`.
 - Costs so far for Phases 0-3 live work: about $0.15 of API credits.
 - 76 unit/integration tests passing.
+
+## Redesign — Edith, minimal interface (Nov 2)
+- Renamed Pantallita → Edith everywhere: package `src/edith`, CLI `edith` and windowless
+  `edith-ui` executables, window titles, prompts, docs, GitHub repository. `PANTALLITA_HOME`
+  is still honoured if `EDITH_HOME` is not set. The data (buffer/, state/, tools/) lives in
+  the repo folder, so nothing else had to be migrated (there was no AppData folder).
+- Removed the mascot and the tangible world (inventor, walking on windows, lasso gesture,
+  cards, ghost fan overlay, machine window, shelf, sounds, phrases, repetition detector).
+- New interface (PySide6, drawn with QPainter): a 40 px soft dot (gray idle / accent while
+  thinking or acting) that opens into a one-field panel; hover-only audio and options;
+  agent mode with one gray status line and Enter/Esc confirmation; separate activity view
+  with sparklines (RAM, VRAM, memory activity); light/dark following Windows live with a
+  250 ms fade.
+- Edith's own text field is never read by the memory (FieldWatcher skips its own process).
+- Checked: 92 tests pass; the UI starts and quits cleanly on the real desktop (dark theme);
+  light and dark renders reviewed. Not yet run end-to-end from the panel against the portal.

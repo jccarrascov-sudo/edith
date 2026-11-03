@@ -1,4 +1,4 @@
-# pantallita configuration. All times are in seconds unless noted.
+# edith configuration. All times are in seconds unless noted.
 
 [capture]
 interval_s = 2.0          # how often the primary monitor is grabbed
@@ -33,8 +33,7 @@ max_output_tokens = 4000   # includes reasoning tokens
 reasoning_effort = "low"   # minimal | low | medium | high | xhigh | max
 
 [ui]
-language = "en"           # en (video) | es (neutral Spanish)
-launch_modifier = "ctrl"  # hold it and drag over Excel rows to lasso them
+language = "en"           # en | es (neutral Spanish): the panel's texts
 
 [budget]
 session_limit_usd = 5.0   # calls stop when a session costs more than this

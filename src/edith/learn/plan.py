@@ -35,7 +35,7 @@ BLOCK_TYPES = {"read_row", "fill_field", "click", "save", "wait", "verify"}
 TRANSFORM_KINDS = {"text", "display", "date", "number"}
 
 SYSTEM_PROMPT = """\
-You are Pantallita, a tiny inventor who turns one demonstration into a reusable machine.
+You are Edith, a desktop assistant that turns one demonstration into a reusable machine.
 You get a recording of something the user did once (clicks, the values text fields ended
 with, windows), the spreadsheet the values came from, and the matching row. Work out the
 intent and write a plan of blocks that does the same task for every row, directly in the
@@ -298,7 +298,7 @@ def make_plan(cfg: Config, seg: seg_mod.Segment, request: str, all_events: list[
         except (ValueError, json.JSONDecodeError) as exc:
             plan, errors = None, [f"the reply was not valid JSON: {exc}"]
         log_fn(f"  attempt {attempt}: {'plan OK' if not errors else f'{len(errors)} problem(s)'} "
-               f"({time.monotonic() - t0:.1f}s, ${getattr(response, 'pantallita_cost', 0):.4f})")
+               f"({time.monotonic() - t0:.1f}s, ${getattr(response, 'edith_cost', 0):.4f})")
         if not errors:
             break
         for err in errors:

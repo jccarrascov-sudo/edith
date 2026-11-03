@@ -48,8 +48,8 @@ Numbers are from real runs; failures are listed too.
 - 76 unit/integration tests passing.
 
 ## Redesign — Edith, minimal interface (Nov 2)
-- Renamed Pantallita → Edith everywhere: package `src/edith`, CLI `edith` and windowless
-  `edith-ui` executables, window titles, prompts, docs, GitHub repository. `PANTALLITA_HOME`
+- Renamed the app to Edith everywhere: package `src/edith`, CLI `edith` and windowless
+  `edith-ui` executables, window titles, prompts, docs, GitHub repository. The legacy home variable
   is still honoured if `EDITH_HOME` is not set. The data (buffer/, state/, tools/) lives in
   the repo folder, so nothing else had to be migrated (there was no AppData folder).
 - Removed the mascot and the tangible world (inventor, walking on windows, lasso gesture,

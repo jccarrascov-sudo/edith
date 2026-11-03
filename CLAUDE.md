@@ -4,8 +4,62 @@
 > "Edith never does the same work twice."
 
 Summary of the user's master prompt (Nov 1, 2026), updated by the redesign of Nov 2, 2026:
-the app was renamed Pantallita -> Edith, the mascot and the on-screen "tangible world" were
+the app was renamed Edith, the mascot and the on-screen "tangible world" were
 removed and replaced by a minimal soft-UI interface (see "Interface").
+
+## FINAL VERSION (master prompt of Nov 2, 2026, 22:30 — takes precedence where it differs)
+Concept: Edith remembers the last 10 minutes of screen and audio and turns them into
+actions: it PROPOSES the edit, the user decides. Work phase by phase: run tests, commit with
+a clear message, report. Verify what exists instead of redoing it. No dead code.
+- HYBRID engine (user's decision): LOCAL model = Muse Glimmer 30B GGUF (Meta, Apache-2.0,
+  vision; unsloth UD-Q2_K_XL 2-bit + mmproj-kquant) through llama.cpp's llama-server, "light
+  usage": screen text comes cheaply from UIA (no model); Glimmer works in low-priority
+  batches (block summaries every 10 min, key moments, describing <=2 small images, offline
+  answers). VRAM default chosen from measurements (2 GB vs 6 GB). Nothing of the continuous
+  capture is ever sent to the cloud.
+- Muse Spark via the Meta Model API ONLY when the user asks or requests an edit. Key from env
+  var META_API_KEY (never in code/repo). Send only what is relevant, cheapest first: (a) text
+  (day summaries, local descriptions/extracted text), (b) images only if the question needs
+  to see something, max 3, downscaled. Fixed prefix first for prompt caching. Excluded apps
+  never sent, not even as text.
+- Cost: tokens and $ per query/day/month ($1.25/M in, $0.15/M cached in, $4.25/M out,
+  configurable); metrics view sparkline of daily cost + month total; monthly limit: 80 % warn,
+  100 % -> local only. "Local only" option ($0). Panel shows in small gray what was sent
+  ("Sent: 2 summaries, 1 screenshot"); optional confirm before sending images (off).
+- No internet / API error / budget reached -> answer with the local model, gray line
+  "Answered locally". Text everywhere: "Your screen never leaves your PC. Only what you ask
+  goes to the cloud." (never claim "100 % local").
+- Interface additions: dot = gray idle, dim gray capture paused, accent busy (fades only);
+  dot centered geometrically (report both centers' coordinates); global hotkey (default
+  Ctrl+Alt+E, customizable in options: "Press the combination…", modifier + key required,
+  Esc cancels, warns if taken and keeps the old one, saved and applied at once, restore
+  default). Metrics view: VRAM, latency, cost sparklines.
+- Memory: change-significant captures only; 10-min ring buffer; transcript on the same
+  timestamps; temporal questions get the timestamped SEQUENCE of relevant frames ("what
+  changed?", "what was there 5 min ago?", "summarize between X and Y"). Key moments in the
+  background (slide change, dates/deadlines/tasks mentioned, explicit instructions "this is
+  in the exam"): max 3 in the panel, one line each, time in gray, click = ask about it, no
+  pop-ups. Warm-up at start, token streaming, timeouts everywhere, low priority, no GPU hogging.
+- STAR FEATURE, edit from memory: "put in my notes what the teacher explained", "reply to
+  this email with the data I saw earlier": find it in the timeline, prepare the edit in the
+  open app. NEVER act directly: preview with new text subtly in accent and removed text struck
+  through in gray; Enter = apply, Esc = discard (small gray hints); below "Based on:
+  [thumbnail] X min ago". "Undo Edith's last edit" always available. Presentation mode (off by
+  default, own hotkey): soft outline on the element Edith acts on.
+- "Do the rest" (forms, verified machines) stays as a second action (user did not ask to drop it).
+- Privacy & robustness: network audit (no capture data leaves except what a question sends),
+  pause, excluded apps, "delete everything now"; model watchdog with auto-restart and a short
+  message (Edith never closes); rotating logs; onboarding of max 3 screens (what it does, the
+  privacy sentence above, the hotkey editable there).
+- Evidence: tests (change detection, 10-min buffer, hotkey, model recovery, preview/undo);
+  benchmark script -> CSV (VRAM/RAM avg+peak, time to first token, total time, GPU use with a
+  heavy app open; 20 screenshots Q&A accuracy; 10 edit-from-memory scenarios: % correct and
+  time to preview; key moments vs hand-labelled; 2-bit vs 3-bit quant); demo-check script
+  (capture -> temporal question -> edit from memory -> undo) with API, without internet
+  (local answer) and with the budget reached, OK/FAIL per step; README for judges (problem in
+  2 lines, Mermaid of the hybrid flow, how Muse is used, benchmark table, daily/monthly cost
+  table, install/run, privacy). Final report must include the real cost of 10 test questions.
+- Phone / multi-machine features: they never existed in this repo (nothing to flag).
 
 ## Product (the video revolves around this; no command is typed in the video)
 A minimal desktop assistant with a local memory of the last 10 minutes.

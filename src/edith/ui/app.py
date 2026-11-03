@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+import time
 
 from PySide6.QtWidgets import QApplication
 
@@ -88,6 +89,19 @@ class Memory:
         self.stop() if self.running else self.start()
         return self.running
 
+    def delete_everything(self) -> int:
+        """Pause, delete all the memory's files, resume if it was recording."""
+        from ..forget import delete_everything
+
+        was_running = self.running
+        self.stop()
+        time.sleep(1.0)                 # let the recorders finish what they were writing
+        try:
+            return delete_everything(self.cfg)
+        finally:
+            if was_running:
+                self.start()
+
     def toggle_audio(self) -> bool:
         self.listening = not self.listening
         if self.recorder:
@@ -120,11 +134,17 @@ def main(cfg: Config, memory: bool = True) -> int:
 
     edith = Edith(theme, agent, Actions(
         toggle_audio=mem.toggle_audio if cfg.audio["enabled"] else None,
-        toggle_memory=mem.toggle, open_activity=open_activity, quit=app.quit), hotkeys)
+        toggle_memory=mem.toggle, open_activity=open_activity, quit=app.quit,
+        delete_everything=mem.delete_everything), hotkeys)
     edith.set_memory_on(mem.running)
     outline = Outline(theme)          # presentation mode only
     agent.outline.connect(lambda rect: outline.show_at(rect) if rect and edith.presentation else outline.hide())
     edith.show()
+    if not edith.state.get("onboarded"):
+        from .onboarding import Onboarding
+
+        welcome = Onboarding(edith)       # first run only: three short screens
+        welcome.open()
     try:
         return app.exec()
     finally:

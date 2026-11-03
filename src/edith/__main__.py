@@ -120,6 +120,9 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.WARNING,
                         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s", datefmt="%H:%M:%S")
     logging.getLogger("edith").setLevel(logging.DEBUG if args.verbose else logging.INFO)
+    from .forget import setup_logs
+
+    setup_logs(args.verbose)
     # Windows consoles default to a legacy code page; window titles and answers need UTF-8.
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")

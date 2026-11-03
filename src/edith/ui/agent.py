@@ -109,6 +109,23 @@ TEXT = {
         "why_undo_not_undone": "the app's undo didn't bring the text back",
         "presentation_on": "Presentation mode: on",
         "presentation_off": "Presentation mode: off",
+        "onb1_title": "Edith remembers the last minutes",
+        "onb1_body": "It keeps the last 10 minutes of your screen and audio, and today's text, so you can ask "
+                     "what happened, or say “put that in my notes” or “do the rest”. "
+                     "It always shows you what it will do first.",
+        "onb2_title": "Private by design",
+        "onb2_body": "Your screen never leaves your PC. Only what you ask goes to the cloud.\n\n"
+                     "Screenshots and audio last 10 minutes, the day's text 24 hours, important dates a year. "
+                     "Pause or delete everything at any time in the options.",
+        "onb3_title": "Open it from anywhere",
+        "onb3_body": "Press {combo} in any app, or click the dot. You can change the shortcut now.",
+        "onb_change": "Change shortcut",
+        "onb_next": "Next",
+        "onb_start": "Start",
+        "delete_all": "Delete everything now",
+        "delete_confirm": "Click again to delete everything",
+        "deleted": "Deleted: {n} files (screenshots, audio, the day's text, notes and important moments). "
+                   "Verified machines and the cost record are kept.",
     },
     "es": {
         "placeholder": "Pregunta por los últimos 10 minutos, o di “haz el resto”",
@@ -193,6 +210,23 @@ TEXT = {
         "why_undo_not_undone": "el deshacer de la app no recuperó el texto",
         "presentation_on": "Modo presentación: sí",
         "presentation_off": "Modo presentación: no",
+        "onb1_title": "Edith recuerda los últimos minutos",
+        "onb1_body": "Guarda los últimos 10 minutos de tu pantalla y audio, y el texto del día, para que "
+                     "preguntes qué pasó, o digas “pásalo a mis apuntes” o “haz el resto”. "
+                     "Siempre te muestra antes lo que va a hacer.",
+        "onb2_title": "Privada por diseño",
+        "onb2_body": "Tu pantalla nunca sale de tu PC. Solo lo que preguntas va a la nube.\n\n"
+                     "Las capturas y el audio duran 10 minutos, el texto del día 24 horas, las fechas importantes "
+                     "un año. Pausa o borra todo cuando quieras en las opciones.",
+        "onb3_title": "Ábrela desde cualquier lugar",
+        "onb3_body": "Presiona {combo} en cualquier app, o haz clic en el punto. Puedes cambiar el atajo ahora.",
+        "onb_change": "Cambiar atajo",
+        "onb_next": "Siguiente",
+        "onb_start": "Empezar",
+        "delete_all": "Borrar todo ahora",
+        "delete_confirm": "Haz clic otra vez para borrar todo",
+        "deleted": "Borrado: {n} archivos (capturas, audio, el texto del día, notas y momentos importantes). "
+                   "Se conservan las máquinas verificadas y el registro de costos.",
     },
 }
 
@@ -439,11 +473,11 @@ class Agent(QObject):
                 return
         else:
             self.status.emit(self.t("planning"))
-            plan = plan_mod.make_plan(self.cfg, demo, request, events, log_fn=log.info)
+            plan = plan_mod.make_plan(self.cfg, demo, request, events, log_fn=log.debug)   # holds row data
             plan_mod.save_plan(plan)
             self.status.emit(self.t("building"))
             try:
-                code, v = build.fabricate(self.cfg, plan, log_fn=log.info)
+                code, v = build.fabricate(self.cfg, plan, log_fn=log.debug)
             except build.BuildError as exc:
                 self.reply.emit(self.t(exc.code) if exc.code else self.t("cant_build", error=str(exc)))
                 return
@@ -452,7 +486,7 @@ class Agent(QObject):
                 return
             tool_dir = build.save_tool(plan, code, v)
             self.status.emit(self.t("compiling"))
-            build.compile_down(tool_dir, log_fn=log.info)
+            build.compile_down(tool_dir, log_fn=log.debug)
         self._confirm_and_run(tool_dir, demo)
 
     def _demo_ref(self, demo: seg_mod.Segment) -> str:
@@ -471,11 +505,11 @@ class Agent(QObject):
         plan, _code = build.load_tool(tool_dir)
         allow = self.cfg.network["allow"]
         self.status.emit(self.t("checking", name=plan["name"]))
-        ok, _problems, _stamp = build.dry_run(tool_dir, log_fn=log.info, allow=allow)
+        ok, _problems, _stamp = build.dry_run(tool_dir, log_fn=log.debug, allow=allow)
         if ok:
             return True
         self.status.emit(self.t("repairing"))
-        r = build.repair(self.cfg, tool_dir, allow=allow, log_fn=log.info)
+        r = build.repair(self.cfg, tool_dir, allow=allow, log_fn=log.debug)
         if r.ambiguous:
             a = r.ambiguous[0]
             self.reply.emit(self.t("ambiguous", column=a.column, options=" / ".join(f"“{c}”" for c in a.candidates)))
@@ -518,7 +552,7 @@ class Agent(QObject):
                 self.status.emit(self.t("writing", i=count["i"], n=s["send"], where=where, level=level))
 
         t0 = time.monotonic()
-        results = build.run_rows_logged(tool_dir, rows, log_fn=log.info, on_event=on_event, allow=allow)
+        results = build.run_rows_logged(tool_dir, rows, log_fn=log.debug, on_event=on_event, allow=allow)
         seconds = time.monotonic() - t0
         ok = sum(r.ok for r in results)
         n_skipped = sum(bool(r.skipped) for r in results)

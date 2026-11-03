@@ -44,6 +44,7 @@ class Actions:
     toggle_memory: Callable[[], bool]          # returns: recording now?
     open_activity: Callable[["Edith"], None]
     quit: Callable[[], None]
+    delete_everything: Callable[[], int] | None = None   # returns files deleted
 
 
 def font(size: float, light: bool = False) -> QFont:
@@ -241,10 +242,13 @@ class Edith(QWidget):
         self.btn_default.hide()   # only while a new shortcut is being captured
         self.btn_local = self._text_button("", self._toggle_local)
         self.btn_presentation = self._text_button("", self.toggle_presentation)
+        self.btn_delete = self._text_button(self.agent.t("delete_all"), self._delete_everything)
+        self.btn_delete.setVisible(self.actions.delete_everything is not None)
+        self._delete_armed = False
         self.text_buttons = (self.btn_activity, self.btn_memory, self.btn_quit, self.btn_hotkey,
-                             self.btn_default, self.btn_local, self.btn_presentation)
+                             self.btn_default, self.btn_local, self.btn_presentation, self.btn_delete)
         for line in ((self.btn_activity, self.btn_memory, self.btn_quit),
-                     (self.btn_hotkey, self.btn_default), (self.btn_local, self.btn_presentation)):
+                     (self.btn_hotkey, self.btn_default), (self.btn_local, self.btn_presentation), (self.btn_delete,)):
             row = QHBoxLayout()
             row.setSpacing(16)
             for b in line:
@@ -509,6 +513,28 @@ class Edith(QWidget):
     def _show_undo(self, on: bool) -> None:
         self.btn_undo.setVisible(on)
         self._fit()
+
+    def _delete_everything(self) -> None:
+        """Two clicks: the first asks, the second deletes (the first is forgotten after 4 s)."""
+        from PySide6.QtCore import QTimer
+
+        if not self._delete_armed:
+            self._delete_armed = True
+            self.btn_delete.setText(self.agent.t("delete_confirm"))
+            QTimer.singleShot(4000, self._disarm_delete)
+            return
+        self._disarm_delete()
+        n = self.actions.delete_everything()
+        self.agent.typist.last = None
+        self.btn_undo.hide()
+        self._moments = []
+        self._render_moments()
+        self.answer.setText("")
+        self._show_status(self.agent.t("deleted", n=n))
+
+    def _disarm_delete(self) -> None:
+        self._delete_armed = False
+        self.btn_delete.setText(self.agent.t("delete_all"))
 
     def toggle_presentation(self) -> None:
         self.presentation = not self.presentation

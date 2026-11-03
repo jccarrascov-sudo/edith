@@ -131,6 +131,16 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   differences. Measured with the official token counter: a real `ask` went from 11,281 to
   7,042 input tokens. Details and numbers in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#token-efficiency).
 
+## Privacy by design
+
+*Your screen never leaves your PC. Only what you ask goes to the cloud.* The keyboard is never
+recorded; password fields and excluded apps are never read. Screenshots and audio last 10
+minutes, the day's text 24 hours, important dates a year, all on this PC; **Delete everything
+now** removes it in two clicks. A runtime audit ([docs/NETWORK_AUDIT.md](docs/NETWORK_AUDIT.md))
+found 0 connections leaving the PC during 90 s of recording, and exactly one (to `api.meta.ai`)
+for a question. The first run shows three short screens: what Edith does, this sentence, and the
+shortcut (changeable there). Details: [docs/PRIVACY.md](docs/PRIVACY.md).
+
 ## Setup (Windows 11, Python 3.12)
 
 ```powershell
@@ -329,6 +339,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Edit from memory: target field capture, preview (accent / struck-through), Enter/Esc, "Based on" thumbnail | done |
 | Undo Edith's last edit (checked, refused if the user changed the text since); presentation-mode outline | done |
 | Day text archive (24 h) searched by questions; descriptions of screens with little text; important moments kept 12 months | done |
+| Network audit script; Delete everything now; rotating logs without captured content; errors logged, never fatal; 3-screen onboarding | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |
 | Compile down: network level learned from the verified machine's own request in the sandbox (allow-listed domains), verified by equivalence | done |

@@ -273,3 +273,28 @@ The user asked that Edith keep "any important detail" of the day, and that impor
   unrelated "pancakes" line was sent); now only within 90 s.
 - 10 new tests: 164 pass.
 
+## Final version, Phase 5 - Privacy and robustness (Nov 3)
+- Network audit (`scripts/network_audit.py` -> docs/NETWORK_AUDIT.md): the whole memory ran
+  90 s on the real desktop (34 frames, 13 screen texts, 10 clicks, 9 transcript lines, notes
+  with the local model) with every socket connect and DNS lookup of the process logged, and
+  llama-server's connections polled with netstat. Result: 0 connections left the PC while
+  recording (27, all to the local model on 127.0.0.1; llama-server had no outside peer). A
+  question opened exactly one: `api.meta.ai` ("Sent: 13 screen texts, 9 transcript lines ·
+  $0.0055"); with the cloud unreachable the local model answered.
+- Static scan: the only other network code is the demo browser/portal (local), the
+  sandbox, and the whisper download, which is tried offline first (local_files_only).
+- Delete everything now (options, two clicks): pauses, deletes frames, audio, timeline, day
+  archive, notes and year moments, learned plans; resumes. Keeps tools/ and the cost record.
+- Rotating logs in state/logs (1 MB x 4); unexpected errors (any thread) are logged and Edith
+  keeps running. The model watchdog was done in Phase 3.
+- Found in the first real run: **the log contained the audio transcript** (and agent-mode
+  logs contained row values). Logs outlive the 10 minutes and "Delete everything", so that
+  was a privacy leak: the transcript is no longer logged and agent-mode details go to debug
+  level only (not written unless -v).
+- Onboarding (`ui/onboarding.py`): 3 screens on the first run only (what Edith does; the
+  privacy sentence and retention; the shortcut, changeable there), Enter = next, Esc = skip.
+  Real first run: the dot and the onboarding were on screen, the local model ready in ~40 s,
+  no errors in the log, no llama-server left after quitting.
+- Tests: 5 new (delete keeps machines and costs, rotating log + errors not fatal, onboarding
+  pages, shortcut change in onboarding, two-click delete): 169 pass.
+

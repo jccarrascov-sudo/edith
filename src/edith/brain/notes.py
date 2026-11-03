@@ -7,8 +7,12 @@ one-line moments. A slide change needs no model: the new slide's first line. Wit
 local model the filter's own lines are kept. Block summaries: every `summary_minutes`, two or
 three sentences about the block, used by later questions instead of the raw memory.
 
-Stored in buffer/notes.jsonl (git-ignored, deleted with the memory, kept `keep_hours`):
-    {"type": "moment", "ts", "kind": "slide|deadline|task|exam", "text"}
+Important moments (dates and deadlines, tasks, appointments, payments, "this is in the exam":
+whatever could hurt the user if forgotten) are kept `important_keep_days` (default a year);
+slide changes and summaries `keep_hours` (default 24 h). Relative dates ("next Monday") are
+turned into real dates by the local model, so they still make sense months later.
+Stored in buffer/notes.jsonl (git-ignored, deleted with "Delete everything now"):
+    {"type": "moment", "ts", "kind": "slide|deadline|task|exam", "text", "date"?: "YYYY-MM-DD"}
     {"type": "summary", "ts", "start", "end", "text"}
 No pop-ups: the panel shows at most three moments when it is opened."""
 
@@ -19,6 +23,7 @@ import logging
 import re
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -30,6 +35,7 @@ from .local import LocalModel, LocalUnavailable
 log = logging.getLogger(__name__)
 
 KINDS = ("slide", "deadline", "task", "exam")
+IMPORTANT = ("deadline", "task", "exam")      # kept for a year: forgetting them could hurt the user
 SLIDES = re.compile(r"powerpnt|powerpoint|presentaci[oó]n|presentation|slides|keynote|impress|\.pptx?\b|\.pdf\b",
                     re.IGNORECASE)
 _TEST = r"(exam|examen|quiz|test|prueba|parcial|final)"
@@ -37,7 +43,8 @@ EXAM = re.compile(r"\b(in|on|en|for|para) (the|el|la|this|este|esta) " + _TEST +
                   r"\b" + _TEST + r"\b.{0,40}\b(will|covers?|includes?|va a|incluye|cubre|entra|viene)\b|"
                   r"\b(important|importante|remember|recuerden|no olviden|don'?t forget)\b", re.IGNORECASE)
 DEADLINE = re.compile(r"\b(deadline|due|submit|turn in|hand in|entrega[rn]?|plazo|fecha l[ií]mite|vence|"
-                      r"hasta el|before|antes del?)\b", re.IGNORECASE)
+                      r"vencimiento|hasta el|before|antes del?|appointment|meeting|interview|pay|payment|"
+                      r"cita|reuni[oó]n|entrevista|pagar|pago|cuota)\b", re.IGNORECASE)
 TASK = re.compile(r"\b(homework|assignment|task|to-?do|project|tarea|trabajo|pendiente|proyecto|ejercicios?)\b",
                   re.IGNORECASE)
 DATE = re.compile(r"\b(\d{1,2}[/-]\d{1,2}([/-]\d{2,4})?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|"
@@ -65,6 +72,7 @@ class NoteBook:
     def __init__(self, cfg: Config, path: Path | None = None):
         self.path = path or cfg.notes_path
         self.keep_s = float(cfg.notes["keep_hours"]) * 3600
+        self.important_s = float(cfg.notes["important_keep_days"]) * 86400
         self._lock = threading.Lock()
 
     def read(self, since: float = 0.0) -> list[dict]:
@@ -94,11 +102,22 @@ class NoteBook:
         recent = [n for n in self.read(time.time() - within_s) if n["type"] == "moment"]
         return list(reversed(recent))[:limit]
 
-    def today(self) -> list[dict]:
-        return self.read(time.time() - self.keep_s)
+    def _kept(self, n: dict, now: float) -> bool:
+        if n["type"] == "moment" and n["kind"] in IMPORTANT:
+            return n["ts"] >= now - self.important_s
+        return n["ts"] >= now - self.keep_s
+
+    def for_questions(self, older_important: int = 40) -> list[dict]:
+        """Today's notes, plus the important moments of the last year (the newest first kept)."""
+        now = time.time()
+        day = [n for n in self.read(now - self.keep_s)]
+        older = [n for n in self.read(now - self.important_s) if n["ts"] < now - self.keep_s
+                 and n["type"] == "moment" and n["kind"] in IMPORTANT][-older_important:]
+        return older + day
 
     def prune(self) -> None:
-        keep = [n for n in self.read() if n["ts"] >= time.time() - self.keep_s]
+        now = time.time()
+        keep = [n for n in self.read() if self._kept(n, now)]
         with self._lock:
             tmp = self.path.with_suffix(".tmp")
             with open(tmp, "w", encoding="utf-8") as f:
@@ -113,11 +132,13 @@ class NoteBook:
 
 
 MOMENT_PROMPT = """You find key moments in what a student or worker saw and heard. Lines come with times.
-A key moment is: a date or deadline for a delivery, a task that was assigned, or an explicit
-instruction that something matters ("this is in the exam", "remember this").
+Today is {today}. A key moment is anything the user would be hurt to forget: a date or deadline
+for a delivery, an exam, an appointment or meeting, a payment due, a task that was assigned, or
+an explicit instruction that something matters ("this is in the exam", "remember this").
 Reply with a JSON array only, one object per real key moment:
-[{"t": "HH:MM:SS", "kind": "deadline|task|exam", "text": "at most 12 words, in the language of the line"}]
-Reply [] if there is none."""
+[{{"t": "HH:MM:SS", "kind": "deadline|task|exam", "text": "at most 14 words with the real date, in the
+language of the line", "date": "YYYY-MM-DD of the event, if there is one"}}]
+Write dates as real dates ("Friday November 13", not "next Friday"). Reply [] if there is none."""
 
 SUMMARY_PROMPT = """Summarize this block of time in at most 50 words: what the user did, saw and
 heard, with the apps and the important facts (names, numbers, dates). No times, no lists.
@@ -135,6 +156,7 @@ class NotesWorker:
         self.last_check = time.time()
         self.last_summary = time.time()
         self._read_lines: dict[tuple[str, str], set[str]] = {}
+        self.last_described = 0.0
 
     def run(self) -> None:
         while not self.stop.wait(float(self.cfg.notes["check_s"])):
@@ -147,6 +169,7 @@ class NotesWorker:
         events = self.timeline.read(since=self.last_check)
         self.last_check = now
         added = self.find_moments(events)
+        self.describe_quiet_screens(events, now)
         if now - self.last_summary >= 60 * float(self.cfg.notes["summary_minutes"]):
             added += self.summarize(self.last_summary, now)
             self.last_summary = now
@@ -195,7 +218,8 @@ class NotesWorker:
             return fallback
         text = "\n".join(f"[{hhmmss(ts)}] {ln}" for ts, ln, _ in lines[-20:])
         try:
-            reply = self.local.generate(MOMENT_PROMPT, text, max_tokens=300, background=True)
+            today = datetime.now().strftime("%A %Y-%m-%d")
+            reply = self.local.generate(MOMENT_PROMPT.format(today=today), text, max_tokens=360, background=True)
         except LocalUnavailable:
             return fallback
         by_time = {hhmmss(ts): ts for ts, _, _ in lines}
@@ -204,8 +228,47 @@ class NotesWorker:
             if not isinstance(item, dict) or item.get("kind") not in KINDS:
                 continue
             ts = by_time.get(str(item.get("t")), lines[-1][0])
-            out.append({"type": "moment", "ts": ts, "kind": item["kind"], "text": _short(str(item.get("text", "")))})
+            m = {"type": "moment", "ts": ts, "kind": item["kind"], "text": _short(str(item.get("text", "")), 16)}
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", str(item.get("date", ""))):
+                m["date"] = item["date"]
+            out.append(m)
         return out
+
+    # --- what was seen ---------------------------------------------------------------------------
+    def describe_quiet_screens(self, events: list[dict], now: float) -> int:
+        """A screen with little readable text (an image, a diagram, a video) gets a short
+        description by the local model, kept in the day archive: at most one every
+        archive.describe_every_s, after any question."""
+        a = self.cfg.archive
+        if not self.local.installed or now - self.last_described < float(a["describe_every_s"]):
+            return 0
+        texts = [e for e in events if e["type"] == "text"]
+        for fr in reversed([e for e in events if e["type"] == "frame"]):
+            near = [t for t in texts if t["window"] == fr["window"] and abs(t["ts"] - fr["ts"]) < 6]
+            if sum(len(t["text"]) for t in near) >= int(a["describe_below_chars"]):
+                continue
+            path = self.timeline.buffer_path(fr["path"])
+            if not path.exists():
+                continue
+            from PIL import Image
+
+            from . import tokens
+            from ..memory.archive import DayArchive
+
+            with Image.open(path) as img:
+                b64 = tokens.jpeg_b64(tokens.fit_width(img.convert("RGB"), 640))
+            try:
+                desc = self.local.describe(b64, "Describe this screenshot in 2 or 3 sentences: the app, what it "
+                                                "shows, and any names, numbers or dates you can read.")
+            except LocalUnavailable:
+                return 0
+            self.last_described = now
+            if desc:
+                DayArchive(self.cfg).add([{"at": fr["ts"], "ts": fr["ts"], "kind": "seen",
+                                           "where": f'{fr["process"]}: {fr["window"]}', "text": desc.strip()}])
+                return 1
+            return 0
+        return 0
 
     # --- summaries ------------------------------------------------------------------------------
     def summarize(self, start: float, end: float) -> int:

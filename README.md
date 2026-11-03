@@ -94,7 +94,20 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   These are what "do the rest" learns from.
 - **Privacy**: windows matching the exclusion list in `config.toml` (password managers,
   banks, private browsing...) are never captured, not even their title. Everything lives
-  in `buffer/`, which is git-ignored and pruned continuously to the last 10 minutes.
+  in `buffer/` (git-ignored) on your PC, kept for three different times:
+  - **10 minutes**: screenshots, audio, clicks, the raw timeline;
+  - **24 hours**: the day's **text** archive (what windows said, what was heard, field values,
+    descriptions of screens with little text) and the block summaries;
+  - **12 months**: important moments only (dates and deadlines, exams, tasks, appointments,
+    payments, "this is in the exam"), so nothing that would hurt to forget is lost.
+  A question sends only the lines that match it. All of it is deleted by "Delete everything now".
+- **Day archive** (`memory/archive.py`): before the 10-minute buffer forgets, its text is
+  copied to the day archive, with no model, so no detail is dropped because a model judged it
+  unimportant. A question about something older (*"the RUC of the invoice I saw this
+  morning"*, *"what did the teacher say at 9:30?"*) searches it (accent- and number-aware
+  term matching) and sends only the matching lines with their times. Screens with little
+  readable text (images, diagrams) get a short description by the local model, at most one
+  every 5 minutes. Relative dates ("next Monday") are stored as real dates.
 - **Audio** is the system output (what you hear), not your microphone. Silent blocks are
   skipped; whisper is loaded only when there is something to transcribe.
 - **Screen text**: after each significant change, the text of the window in front is read
@@ -315,6 +328,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Activity: answer time and daily cost sparklines | done |
 | Edit from memory: target field capture, preview (accent / struck-through), Enter/Esc, "Based on" thumbnail | done |
 | Undo Edith's last edit (checked, refused if the user changed the text since); presentation-mode outline | done |
+| Day text archive (24 h) searched by questions; descriptions of screens with little text; important moments kept 12 months | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |
 | Compile down: network level learned from the verified machine's own request in the sandbox (allow-listed domains), verified by equivalence | done |

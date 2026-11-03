@@ -247,3 +247,29 @@ Muse Glimmer 30B UD-Q2_K_XL (llama.cpp b11515, Vulkan, RTX 5050 8 GB, 16 GB RAM)
 - Tests: 13 new (intent, parsing, preview HTML, undo refusals without sending a key,
   router with the edit prompt): 154 pass.
 
+## Final version - day memory and important moments for a year (Nov 3, user's request)
+The user asked that Edith keep "any important detail" of the day, and that important things
+(dates, anything whose omission could hurt) stay for a year.
+- `memory/archive.py`: before the 10-minute buffer is pruned, its text (new screen lines per
+  window, transcript, field values, window changes) goes to buffer/day/YYYY-MM-DD.jsonl, kept
+  24 h, no model involved. Questions search it (accent-folded terms, numbers also without
+  separators, rarity-weighted overlap, neighbours only within 90 s) and send only the matching
+  lines from before the buffer. Time words beyond 10 minutes are understood: "at 9:30",
+  "this morning/afternoon", "N min ago".
+- Screens with little readable text are described by Glimmer in the background (at most one
+  every 5 minutes) into the archive.
+- Important moments (deadline, task, exam; the filter now also catches appointments, meetings,
+  payments, dues) are kept 365 days; slides and summaries 24 h. Glimmer turns relative dates
+  into real ones (a `date` field). Every question gets the year's important moments.
+- Live (isolated home, real models):
+  | Check | Result |
+  |---|---|
+  | "homework 4 is due next Monday" said on Tue Nov 3 | moment with date 2026-11-09, 16.9 s, local |
+  | a screen with no readable text | described correctly (fields, values), 96 s, background |
+  | RUC + amount of an invoice seen 3 h ago, among 300 noise lines | Muse Spark exact; 5 archive lines sent, $0.0030, 7.5 s |
+  | an exam noted 40 days ago | "Monday December 14, chapters 1-6", $0.0030 |
+  | the RUC question, Local only | Glimmer exact, 30.6 s |
+- One bug found by the tests: a match's neighbours were added even 17 minutes apart (an
+  unrelated "pancakes" line was sent); now only within 90 s.
+- 10 new tests: 164 pass.
+

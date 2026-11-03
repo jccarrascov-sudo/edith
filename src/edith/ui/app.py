@@ -57,10 +57,17 @@ class Memory:
             self.recorder.listening = self.listening
             workers.append(self.recorder.run)
 
+        from ..memory.archive import Archiver, DayArchive
+
+        archiver = Archiver(DayArchive(cfg))
+        archiver.resume()
+
         def janitor() -> None:
             while not stop.wait(cfg.retention["prune_every_s"]):
                 try:
+                    archiver.take(timeline.read(since=archiver.last_ts))   # text kept for the day
                     timeline.prune()
+                    archiver.archive.prune()
                 except Exception:
                     log.exception("Prune failed")
 

@@ -49,6 +49,9 @@ class Router:
         self._system, self._extra = SYSTEM_PROMPT.format(minutes=cfg.retention["minutes"]), ""
         self.ledger = ledger or Ledger()
         self.notes = notes or NoteBook(cfg)
+        from ..memory.archive import DayArchive
+
+        self.archive = DayArchive(cfg)
         self.local_only = False
 
     def month(self) -> tuple[float, float]:
@@ -66,7 +69,7 @@ class Router:
         timeline = Timeline(self.cfg)
         timeline.prune()
         f = focus(question, time.time(), self.cfg.retention_s)
-        notes = self.notes.today()
+        notes = self.notes.for_questions()
         spent, limit = self.month()
         reason = "local_only" if self.local_only else ("budget" if spent >= limit else None)
         if reason is None:
@@ -82,11 +85,24 @@ class Router:
         return self._local(question, f, notes, timeline, on_token, reason, t0)
 
     # --- cloud ----------------------------------------------------------------------------------
-    def _options(self, f: Focus, notes: list[dict], images: int) -> ContextOptions:
+    def _options(self, f: Focus, notes: list[dict], images: int, archive: list[dict] | None = None) -> ContextOptions:
         c = self.cfg.cloud
         older = float(c["older_image_width"]) / float(c["image_width"])
         return ContextOptions(history_scales=[1.0, older], diff_crops=True, max_images=images,
-                              image_width=int(c["image_width"]), focus=f, notes=notes)
+                              image_width=int(c["image_width"]), focus=f, notes=notes, archive=archive or [])
+
+    def _archive(self, question: str, f: Focus, max_chars: int) -> list[dict]:
+        """Lines of the day's text archive that match the question, from before the 10-minute
+        buffer (what is still in the buffer is sent from there)."""
+        now = time.time()
+        since, until = f.span if f.span else (0.0, now)
+        until = min(until, now - self.cfg.retention_s + 30)
+        if until <= since:
+            return []
+        hits = self.archive.search(question, since, until, max_chars=max_chars)
+        if not hits and f.span:                     # "what was I doing at 9:30?": the period itself
+            hits = [r for r in self.archive.read(since, until) if r["kind"] != "window"][-12:]
+        return hits
 
     def _cloud(self, question, f, notes, timeline, on_token, confirm_images, spent, limit, t0) -> Reply:
         from .client import MetaClient
@@ -95,10 +111,11 @@ class Router:
         has_text = any(e["type"] in ("text", "transcript", "field") for e in events
                        if f.start <= e["ts"] <= f.end + 1)
         images = int(self.cfg.cloud["max_images"]) if (f.visual or not has_text) else 0
-        messages, stats = self._messages(timeline, question, f, notes, images)
+        archive = self._archive(question, f, int(self.cfg.archive["max_chars_cloud"]))
+        messages, stats = self._messages(timeline, question, f, notes, images, archive)
         if stats["images"] and self.cfg.cloud["confirm_images"] and confirm_images \
                 and not confirm_images(stats["images"]):
-            messages, stats = self._messages(timeline, question, f, notes, 0)
+            messages, stats = self._messages(timeline, question, f, notes, 0, archive)
         client = MetaClient(self.cfg)
         text, usage, cost = client.chat_stream(
             "ask", on_token=on_token, messages=messages, max_tokens=int(self.cfg.cloud["max_output_tokens"]),
@@ -113,8 +130,8 @@ class Router:
             foot += self.t("budget_warn", pct=round(100 * spent / limit))
         return Reply(text.strip(), foot, "cloud", cost, time.monotonic() - t0)
 
-    def _messages(self, timeline, question, f, notes, images):
-        messages, stats = build_messages(self.cfg, timeline, question, self._options(f, notes, images))
+    def _messages(self, timeline, question, f, notes, images, archive=None):
+        messages, stats = build_messages(self.cfg, timeline, question, self._options(f, notes, images, archive))
         messages[0]["content"] = self._system
         if self._extra:
             messages[1]["content"].insert(len(messages[1]["content"]) - 1, {"type": "text", "text": self._extra})
@@ -123,7 +140,8 @@ class Router:
     def _sent(self, stats: dict) -> str:
         parts = []
         for key, n in (("screen_texts", stats["screen_texts"]), ("summaries", stats["summaries"]),
-                       ("moments", stats["moments"]), ("transcripts", stats["transcript_segments"]),
+                       ("moments", stats["moments"]), ("archive", stats["archive"]),
+                       ("transcripts", stats["transcript_segments"]),
                        ("screenshots", stats["images"])):
             if n:
                 parts.append(self.t(f"sent_{key}" + ("_1" if n == 1 else ""), n=n))
@@ -135,7 +153,8 @@ class Router:
         if not self.local or not self.local.installed:
             return Reply(self.t("no_local", why=why), "", "none")
         self.local.ensure_started()
-        _, stats = build_messages(self.cfg, timeline, question, self._options(f, notes, 0))
+        archive = self._archive(question, f, int(self.cfg.archive["max_chars_local"]))
+        _, stats = build_messages(self.cfg, timeline, question, self._options(f, notes, 0, archive))
         context = stats["context_text"]
         if len(context) > LOCAL_CONTEXT_CHARS:      # keep the start (what period) and the newest part
             context = context[:1200] + "\n(…)\n" + context[-(LOCAL_CONTEXT_CHARS - 1200):]
@@ -188,7 +207,7 @@ def cli(cfg: Config, question: str, dry_run: bool = False, local_only: bool = Fa
     if dry_run:
         f = focus(question, time.time(), cfg.retention_s)
         images = int(cfg.cloud["max_images"]) if f.visual else 0
-        _, stats = build_messages(cfg, Timeline(cfg), question, router._options(f, router.notes.today(), images))
+        _, stats = build_messages(cfg, Timeline(cfg), question, router._options(f, router.notes.for_questions(), images))
         print(f"[edith] focus {f.kind}, {stats['images']} images, {router._sent(stats)}", file=sys.stderr)
         print(stats["context_text"])
         return

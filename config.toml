@@ -69,13 +69,24 @@ context = 8192
 port = 0                  # 0 = a free port each time
 timeout_s = 120
 
+[archive]
+# The day's text: what windows showed, what was heard, field values, and short descriptions
+# of screens with little text. Screenshots and audio are still deleted after 10 minutes.
+# Local only; a question sends only the lines that match it.
+keep_hours = 24
+describe_every_s = 300      # at most one screenshot description by the local model this often
+describe_below_chars = 150  # ...and only of screens with less readable text than this
+max_chars_cloud = 4000      # archive lines a question may send
+max_chars_local = 2500
+
 [notes]
 # Background notes by the local model: block summaries and key moments (slide changes,
-# dates/deadlines/tasks, "this is in the exam"). Local text only, kept keep_hours.
+# dates/deadlines/tasks, "this is in the exam"). Local text only. Important moments are kept a year.
 enabled = true
 summary_minutes = 10
 check_s = 30
-keep_hours = 24
+keep_hours = 24           # slide changes and block summaries
+important_keep_days = 365 # dates, deadlines, tasks, appointments, "this is in the exam"
 
 # If the foreground window matches any of these (case-insensitive substring),
 # nothing is captured: no frame, no window title, no process name.

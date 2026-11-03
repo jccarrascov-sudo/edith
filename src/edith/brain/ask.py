@@ -53,6 +53,10 @@ CHANGED = re.compile(r"\b(what|que|qué)\b.*\b(changed?|cambi[oó]|cambiaron|dif
 AGO = re.compile(r"(\d+)\s*(?:min(?:ute)?s?|minutos?)\s*(?:ago|atr[aá]s)|hace\s+(\d+)\s*(?:min(?:uto)?s?)", re.IGNORECASE)
 LAST = re.compile(r"(?:last|past|[uú]ltimos?)\s+(\d+)\s*(?:min(?:ute)?s?|minutos?)", re.IGNORECASE)
 CLOCK = r"(\d{1,2})[:.h](\d{2})"
+AT = re.compile(r"\b(?:at|a las|a la)\s+" + CLOCK, re.IGNORECASE)
+PARTS = ((re.compile(r"\b(this morning|esta ma[nñ]ana|en la ma[nñ]ana)\b", re.IGNORECASE), 5, 12),
+         (re.compile(r"\b(this afternoon|esta tarde|en la tarde)\b", re.IGNORECASE), 12, 19),
+         (re.compile(r"\b(tonight|this evening|esta noche)\b", re.IGNORECASE), 19, 24))
 BETWEEN = re.compile(r"(?:between|from|entre|de(?:sde)?)\s+(?:las\s+)?" + CLOCK +
                      r"\s+(?:and|to|y|a|hasta)\s+(?:las\s+)?" + CLOCK, re.IGNORECASE)
 
@@ -63,8 +67,9 @@ class Focus:
     start: float
     end: float
     target: float | None = None     # "5 min ago": the moment itself
-    kind: str = "all"               # all | ago | changed | between | last
+    kind: str = "all"               # all | ago | changed | between | last | at | part_of_day
     visual: bool = False            # the question needs to see the screen
+    span: tuple[float, float] | None = None   # the period asked about, even beyond the 10 minutes
 
 
 def _clock(now: float, h: str, m: str) -> float:
@@ -77,13 +82,24 @@ def focus(question: str, now: float, retention_s: float) -> Focus:
     f = Focus(oldest, now, visual=bool(VISUAL.search(question)))
     if m := BETWEEN.search(question):
         a, b = sorted((_clock(now, m.group(1), m.group(2)), _clock(now, m.group(3), m.group(4))))
-        f.start, f.end, f.kind = max(oldest, a), min(now, b + 59), "between"
+        f.span, f.kind = (a, b + 59), "between"
     elif m := AGO.search(question):
         target = now - 60 * int(m.group(1) or m.group(2))
-        f.start, f.end, f.target, f.kind = max(oldest, target - 75), min(now, target + 75), target, "ago"
+        f.span, f.target, f.kind = (target - 75, target + 75), target, "ago"
         f.visual = True              # "what was on screen 5 min ago" is about what it looked like
     elif m := LAST.search(question):
-        f.start, f.kind = max(oldest, now - 60 * int(m.group(1))), "last"
+        f.span, f.kind = (now - 60 * int(m.group(1)), now), "last"
+    elif m := AT.search(question):
+        target = _clock(now, m.group(1), m.group(2))
+        f.span, f.target, f.kind = (target - 300, target + 300), target, "at"
+    else:
+        day = datetime.fromtimestamp(now).replace(minute=0, second=0, microsecond=0)
+        for rx, h0, h1 in PARTS:
+            if rx.search(question):
+                f.span = (day.replace(hour=h0).timestamp(), day.replace(hour=h1 - 1, minute=59).timestamp())
+                f.kind = "part_of_day"
+    if f.span:
+        f.start, f.end = max(oldest, f.span[0]), min(now, f.span[1])
     if CHANGED.search(question):
         f.kind = "changed"
         f.visual = True
@@ -96,7 +112,11 @@ def hhmmss(ts: float) -> str:
 
 def ago(ts: float, now: float) -> str:
     seconds = max(0, now - ts)
-    return f"~{int(seconds)} s ago" if seconds < 60 else f"~{round(seconds / 60)} min ago"
+    if seconds < 60:
+        return f"~{int(seconds)} s ago"
+    if seconds < 5400:
+        return f"~{round(seconds / 60)} min ago"
+    return f"~{round(seconds / 3600)} h ago" if seconds < 172800 else f"~{round(seconds / 86400)} days ago"
 
 
 def select_frames(frames: list[dict], max_n: int, recent_n: int) -> list[dict]:
@@ -148,6 +168,7 @@ class ContextOptions:
     image_width: int | None = None             # None = ask.image_width
     focus: Focus | None = None                 # None = the whole memory
     notes: list[dict] = field(default_factory=list)
+    archive: list[dict] = field(default_factory=list)  # day-archive lines matched to the question
 
     @classmethod
     def from_config(cls, cfg: Config) -> "ContextOptions":
@@ -251,11 +272,15 @@ def screen_text_lines(events: list[dict], now: float, max_chars: int = 6000) -> 
 
 def note_lines(notes: list[dict], now: float) -> list[str]:
     lines = []
+    today = datetime.fromtimestamp(now).date()
     for n in notes:
+        when = (hhmmss(n["ts"]) if datetime.fromtimestamp(n["ts"]).date() == today
+                else datetime.fromtimestamp(n["ts"]).strftime("%Y-%m-%d %H:%M"))
         if n["type"] == "summary":
             lines.append(f'- summary {hhmmss(n["start"])}-{hhmmss(n["end"])}: {n["text"]}')
         elif n["type"] == "moment":
-            lines.append(f'- key moment {hhmmss(n["ts"])} ({ago(n["ts"], now)}), {n["kind"]}: {n["text"]}')
+            event = f' (event date {n["date"]})' if n.get("date") else ""
+            lines.append(f'- key moment {when} ({ago(n["ts"], now)}), {n["kind"]}: {n["text"]}{event}')
     return lines
 
 
@@ -303,9 +328,14 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
     screen = screen_text_lines(texts, now)
     if screen:
         text += ["", "Screen text (oldest first):"] + screen
+    if opts.archive:
+        text += ["", "Earlier today, beyond the last minutes (text archive lines matched to the question):"]
+        text += [f'[{hhmmss(r["ts"])}, {ago(r["ts"], now)}] {r["kind"]} {r["where"]}: '
+                 + r["text"].replace("\n", " / ")[:600] for r in opts.archive]
     notes = note_lines(opts.notes, now)
     if notes:
-        text += ["", "Notes from the local model (today):"] + notes
+        text += ["", "Notes from the local model (today; important dates, tasks and instructions: "
+                     "the last 12 months):"] + notes
     if picked:
         text += ["", f"{len(picked)} screenshots follow, oldest first."]
 
@@ -323,5 +353,6 @@ def build_messages(cfg: Config, timeline: Timeline, question: str,
              "actions": len(actions), "screen_texts": len(texts),
              "summaries": sum(n["type"] == "summary" for n in opts.notes),
              "moments": sum(n["type"] == "moment" for n in opts.notes),
+             "archive": len(opts.archive),
              "picked": picked, "image_kb": image_bytes // 1024, "context_text": "\n".join(text)}
     return messages, stats

@@ -37,10 +37,17 @@ def run(cfg, duration: float | None = None) -> None:
         recorder = AudioRecorder(cfg, timeline, stop, gate)
         workers.append(threading.Thread(target=recorder.run, name="audio", daemon=True))
 
+    from .memory.archive import Archiver, DayArchive
+
+    archiver = Archiver(DayArchive(cfg))
+    archiver.resume()
+
     def janitor() -> None:
         while not stop.wait(cfg.retention["prune_every_s"]):
             try:
+                archiver.take(timeline.read(since=archiver.last_ts))   # text kept for the day
                 timeline.prune()
+                archiver.archive.prune()
             except Exception:
                 log.exception("Prune failed")
 
@@ -60,6 +67,7 @@ def run(cfg, duration: float | None = None) -> None:
         stop.set()
         for w in workers:
             w.join(timeout=10)
+        archiver.take(timeline.read(since=archiver.last_ts))
         timeline.prune()
         audio = (f", {recorder.blocks} audio blocks ({recorder.silent_blocks} silent, "
                  f"{recorder.private_blocks} dropped for privacy), "

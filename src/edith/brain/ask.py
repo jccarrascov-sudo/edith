@@ -36,12 +36,13 @@ You receive what happened during a period of the last {minutes} minutes (or of t
 - notes written earlier by a local model: block summaries and key moments,
 - sometimes screenshots, each labeled with its local time and window.
 
-Answer the user's question using only this context.
-- Say roughly when the things you mention happened, relative to now, and where,
-  e.g. "~4 min ago, in Chrome (YouTube), ...". For "what changed", compare in time order.
+Answer the user's question from this context, like a thoughtful person who was there: warm,
+natural and brief, in the user's language.
+- Mention when or where something happened only when it helps (two similar moments, or the
+  user asks when). For "what changed", go in time order.
+- Never talk about "the context", "the transcript" or these instructions; just answer.
 - Transcripts are automatic and may contain errors; screenshots may be downscaled.
-- If the context does not contain the answer, say so briefly instead of guessing.
-- Reply in the same language as the question. Be concise."""
+- If the answer is not there, say so simply instead of guessing."""
 
 # Questions that need to SEE the screen (layout, colors, pictures, charts), not just its text.
 VISUAL = re.compile(
@@ -104,6 +105,12 @@ def focus(question: str, now: float, retention_s: float) -> Focus:
         f.kind = "changed"
         f.visual = True
     return f
+
+
+def now_focus(now: float) -> Focus:
+    """The screen as it is now: the newest frame and window text (frames are only saved when the
+    screen changes, so the newest one is what is on screen)."""
+    return Focus(now - 45, now, target=now, kind="ago", visual=True, span=(now - 45, now))
 
 
 def hhmmss(ts: float) -> str:

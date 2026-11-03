@@ -35,6 +35,12 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   field, and fade in only while the mouse is over the panel; the options open as one quiet
   column (Activity, Pause memory, Local only, Presentation mode; the shortcut; Delete
   everything, Quit). Esc or a click elsewhere closes it back into the dot.
+- **It talks like a person.** "Hi", "thanks" or "what is recursion?" get a short, natural
+  answer with nothing of the screen sent. A doubt about the screen right now ("what does this
+  error mean?", "what's missing here?") is answered from the current screen. "How do I automate
+  this?" gets a short guide tailored to what is open (the spreadsheet, the form). The memory is
+  used only when the question is about what happened; when it is unclear, the model may ask for
+  it with a hidden token and Edith asks again with the memory.
 - **Answers stream** in token by token, typeset for reading (generous line height, Markdown
   bold and lists). The panel shows nothing the user did not ask for: what was sent and its
   cost are kept in the ledger and the Activity view (`[ui] show_details = true` puts them
@@ -354,6 +360,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Edit from memory: target field capture, preview (accent / struck-through), Enter/Esc, "Based on" thumbnail | done |
 | Undo Edith's last edit (checked, refused if the user changed the text since); presentation-mode outline | done |
 | Day text archive (24 h) searched by questions; descriptions of screens with little text; important moments kept 12 months | done |
+| Conversation: small talk without memory, doubts about the current screen, automation guide | done |
 | Network audit script; Delete everything now; rotating logs without captured content; errors logged, never fatal; 3-screen onboarding | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |

@@ -107,6 +107,10 @@ needed at that moment, it is not shown.
   (real Gaussian blur, tinted, low opacity), harmonious colors, and NO cost or technical details
   in the panel (they live in Activity; `[ui] show_details` restores them). Every change is
   checked on screenshots in both themes before it is called done.
+- Humanity (user, Nov 3): small talk and general questions are answered naturally WITHOUT the
+  memory (nothing of the screen sent); the memory only when the question warrants it; doubts
+  about the current screen are answered from it; Edith guides the user to set up automations
+  (`brain/talk.py`).
 - Charts only where there is data, in a separate view (Activity: RAM, VRAM, memory activity
   in the last 10 min): 1.5-2 px accent sparkline, no axes/grid/legend, at most a 10-15 %
   fill under the line, the important number large on top, exact values only in a tooltip.

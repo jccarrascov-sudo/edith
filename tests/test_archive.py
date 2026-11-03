@@ -139,7 +139,7 @@ class RouterArchiveTests(unittest.TestCase):
         fake.chat_stream.return_value = ("Friday.", None, 0.001)
         r = answer.Router(cfg, None, lambda k, **kw: ui_text("en", k, **kw), notes=notes.NoteBook(cfg))
         with mock.patch("edith.brain.client.MetaClient", return_value=fake):
-            reply = r.respond("when is the exam?")
+            reply = r.respond("what did they say about the exam?")
         sent = fake.chat_stream.call_args.kwargs["messages"][1]["content"][0]["text"]
         self.assertIn("the final exam is on Friday November 13", sent)
         self.assertNotIn("pancakes", sent)

@@ -288,14 +288,14 @@ class RouterTests(unittest.TestCase):
         r = self.router(fake)
         r.local_only = True
         with mock.patch("edith.brain.client.MetaClient", side_effect=AssertionError("cloud called")):
-            reply = r.respond("when is the exam?")
+            reply = r.respond("what did they say about the exam?")
         self.assertEqual((reply.where, reply.text, reply.footnote), ("local", "local answer", "Answered locally"))
         self.assertIn("the exam is on Friday", fake.calls[0])
 
     def test_no_connection_falls_back_to_local(self):
         r = self.router(FakeLocal())
         with mock.patch("edith.brain.client.MetaClient", side_effect=ConnectionError("no internet")):
-            reply = r.respond("when is the exam?")
+            reply = r.respond("what did they say about the exam?")
         self.assertEqual(reply.where, "local")
         self.assertEqual(reply.footnote, "Answered locally · no connection")
 
@@ -303,7 +303,7 @@ class RouterTests(unittest.TestCase):
         client.append_ledger(self.ledger.path, {"ts": time.time(), "cost": 10.0})
         r = self.router(FakeLocal())
         with mock.patch("edith.brain.client.MetaClient", side_effect=AssertionError("cloud called")):
-            reply = r.respond("when is the exam?")
+            reply = r.respond("what did they say about the exam?")
         self.assertEqual(reply.footnote, "Answered locally · monthly limit reached")
 
     def test_cloud_answer_says_what_was_sent_and_warns_at_80_percent(self):
@@ -312,7 +312,7 @@ class RouterTests(unittest.TestCase):
         fake_client.chat_stream.return_value = ("Friday.", None, 0.0012)
         r = self.router(FakeLocal())
         with mock.patch("edith.brain.client.MetaClient", return_value=fake_client):
-            reply = r.respond("when is the exam?")
+            reply = r.respond("what did they say about the exam?")
         self.assertEqual(reply.where, "cloud")
         self.assertEqual(reply.footnote, "Sent: 1 transcript line · $0.0012 · 85 % of this month's budget")
         sent = fake_client.chat_stream.call_args.kwargs["messages"]

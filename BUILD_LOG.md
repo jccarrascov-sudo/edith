@@ -343,3 +343,22 @@ The user asked that Edith keep "any important detail" of the day, and that impor
 - Checked on screenshots in both themes (capturas-ui/); centers still coincide (dot window 86x86,
   circle = dot = (43, 43), centroid of the dot's pixels (43.0, 43.0)). Tests: 173 pass.
 
+## Conversation (Nov 3, user's request: "more humanity", help with the current screen, guide automations)
+- `brain/talk.py`: a no-model filter sorts a request into chat, memory, a doubt about the
+  screen now, how to automate, or unsure. Chat sends only the question with a warm, brief
+  prompt. Unsure questions go as chat; if the model needs the memory it answers with a hidden
+  token (held back from the panel by a small gate) and Edith asks again with the memory.
+  Screen doubts get the newest frame and window text; automation questions get a guide prompt
+  (one by hand, "do the rest", checked copy, summary, Enter/Esc) fed with what is open.
+- Memory answers are written "like a thoughtful person who was there": times and apps only
+  when they help; never "the context shows".
+- Live (Muse Spark, isolated memory with a lecture, invoices.xlsx and the portal half filled):
+  "hola Edith!" -> "¡Hola! Qué alegría verte por aquí, ¿cómo va tu día?" (4.2 s, only the
+  question sent); "¿qué es la recursión?" -> a plain explanation (4.3 s); "¿y cuándo era el
+  examen?" -> the model asked for the memory, answer "viernes 13 de noviembre, recursión y
+  memoización" (7.3 s); "¿qué me falta llenar aquí?" -> Tax ID, date, description (6.2 s);
+  "¿cómo automatizo esto?" -> a 3-step guide naming invoices.xlsx and the 30 rows (7.2 s).
+  $0.014 for the five.
+- Tests: 8 new (intents, the hidden token never shown, chat sends no memory, escalation,
+  screen doubt gets the frame, guide prompt): 181 pass.
+

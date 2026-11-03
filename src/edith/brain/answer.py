@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from . import tokens
-from .ask import SYSTEM_PROMPT, ContextOptions, Focus, build_messages, focus
+from .ask import SYSTEM_PROMPT, ContextOptions, Focus, build_messages, focus, now_focus
 from .client import BudgetExceeded, Ledger, append_ledger
 from .local import MODEL_NAME, LocalModel, LocalUnavailable
 from .notes import NoteBook
@@ -68,10 +68,22 @@ class Router:
         self._extra = extra
         timeline = Timeline(self.cfg)
         timeline.prune()
-        f = focus(question, time.time(), self.cfg.retention_s)
-        notes = self.notes.for_questions()
         spent, limit = self.month()
         reason = "local_only" if self.local_only else ("budget" if spent >= limit else None)
+        if system is None:                          # an answer, not another job (e.g. an edit)
+            from . import talk
+
+            k = talk.kind(question)
+            if k in ("chat", "unsure"):
+                chat = self._chat(question, on_token, reason, t0, can_escalate=k == "unsure")
+                if chat is not None:
+                    return chat
+            elif k == "automate":
+                self._system = talk.GUIDE_PROMPT
+        f = focus(question, time.time(), self.cfg.retention_s)
+        if system is None and talk.kind(question) == "screen":
+            f = now_focus(time.time())              # what is on the screen right now
+        notes = self.notes.for_questions()
         if reason is None:
             try:
                 return self._cloud(question, f, notes, timeline, on_token, confirm_images, spent, limit, t0)
@@ -83,6 +95,46 @@ class Router:
                 log.warning("Cloud answer failed (%s: %s); answering locally", type(exc).__name__, exc)
                 reason = "offline"
         return self._local(question, f, notes, timeline, on_token, reason, t0)
+
+    # --- conversation (no memory) -----------------------------------------------------------------
+    def _chat(self, question: str, on_token, reason: str | None, t0: float, can_escalate: bool) -> Reply | None:
+        """A natural answer with nothing of the screen sent. None = the model asked for the
+        memory (only when can_escalate), so the caller answers with it."""
+        from . import talk
+
+        system = talk.CHAT_PROMPT.format(token=talk.NEED_MEMORY)
+        gate = talk.Gate(on_token)
+        text, where, cost = None, "cloud", 0.0
+        if reason is None:
+            try:
+                from .client import MetaClient
+
+                text, _usage, cost = MetaClient(self.cfg).chat_stream(
+                    "chat", on_token=gate, messages=[{"role": "system", "content": system},
+                                                     {"role": "user", "content": question}],
+                    max_tokens=800, reasoning_effort="low")
+            except Exception as exc:                # no key, no internet, API error, brake
+                log.info("Cloud chat unavailable (%s); answering locally", type(exc).__name__)
+                text = None
+        if text is None:
+            if not self.local or not self.local.installed:
+                return Reply(self.t("no_local", why=self.t(f"why_{reason or 'offline'}")), "", "none")
+            self.local.ensure_started()
+            try:
+                text = self.local.generate(system, question, max_tokens=300, on_token=gate)
+            except LocalUnavailable:
+                return Reply(self.t("no_local", why=self.t(f"why_{reason or 'offline'}")), "", "none")
+            where = "local"
+            append_ledger(self.ledger.path, {"ts": time.time(), "model": MODEL_NAME, "purpose": "chat", "input": 0,
+                                             "cached": 0, "output": 0, "images": 0, "cost": 0.0,
+                                             "latency_s": round(time.monotonic() - t0, 2)})
+        if talk.Gate.asked_for_memory(text):
+            if can_escalate:
+                log.info("Chat asked for the memory; answering with it")
+                return None
+            text = text.replace(talk.NEED_MEMORY, "").strip()
+        foot = self.t("answered_locally") if where == "local" else self.t("sent_chat", cost=f"${cost:.4f}")
+        return Reply(text.strip(), foot, where, cost, time.monotonic() - t0)
 
     # --- cloud ----------------------------------------------------------------------------------
     def _options(self, f: Focus, notes: list[dict], images: int, archive: list[dict] | None = None) -> ContextOptions:

@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 TEXT = {
     "en": {
-        "placeholder": "Ask about the last 10 minutes, or say “do the rest”",
+        "placeholder": "Ask about your day, or say “do the rest”",
         "thinking": "Thinking…",
         "rewinding": "Looking through the last minutes…",
         "no_demo": "I don't see a form you filled in the last {minutes} minutes. Do one by hand, then ask me again.",
@@ -128,7 +128,7 @@ TEXT = {
                    "Verified machines and the cost record are kept.",
     },
     "es": {
-        "placeholder": "Pregunta por los últimos 10 minutos, o di “haz el resto”",
+        "placeholder": "Pregunta por tu día, o di “haz el resto”",
         "thinking": "Pensando…",
         "rewinding": "Revisando los últimos minutos…",
         "no_demo": "No veo un formulario que hayas llenado en los últimos {minutes} minutos. Haz uno a mano y vuelve a pedírmelo.",

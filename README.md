@@ -61,8 +61,20 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   the big number): the number large, a 1.75 px accent sparkline under it for the trend, a faint
   fill, no axes, grid or legend; the exact value is in a tooltip under the mouse.
 - **Soft UI**: one flat background color shared by the panel and the buttons; relief comes
-  only from two soft shadows (light up-left, dark down-right), inset when pressed; no
-  borders or dividers, 16-24 px corners, one accent color, everything else gray.
+  only from two soft shadows (light up-left, dark down-right, same offset and blur), inset
+  when pressed; the closed dot has a centered, symmetric glow instead. Every window keeps a
+  transparent margin of offset + blur on all four sides, so no shadow is ever cut. No borders
+  or dividers, 16-24 px corners, one accent color, everything else gray.
+- **Type and color**: one typeface, Source Serif 4 (bundled, SIL OFL), 400 for text and 600
+  for titles and large numbers; 14 px text, 12 px secondary, 28 px large numbers. Text is
+  #1A1B1E (light) / #F2F3F5 (dark), secondary text the same at 62 % / 60 %; the accent is
+  #5B7CFA (light) / #7AA7FF (dark). Every text color reaches 4.5:1 on its background (a test
+  checks it): in the light theme 60 % gave 4.24:1, so secondary text is 62 %, and accent-colored
+  text uses #2A55F9 (the same hue, 4.6:1) while the dot and the lines keep #5B7CFA (3.0:1).
+- **Centered**: the dot and its circle come from one rectangle (one geometric center). The open
+  panel has the same 24 px inner margin on all four sides, everything under the field starts
+  on the field's text axis, and it opens centered on the dot, with the field where the dot was,
+  moved back inside the screen near an edge.
 - **Light and dark** follow the Windows app theme live, without restarting: every color is
   a variable with a light and a dark set, and a theme change fades over 250 ms.
 
@@ -369,6 +381,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
 | [Muse Glimmer 30B](https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF) (Meta; GGUF by Unsloth) | Local model: notes, offline answers (downloaded, not in the repo) | Apache-2.0 |
 | [llama.cpp](https://github.com/ggml-org/llama.cpp) `llama-server` | Runs the local model (installed with winget, not in the repo) | MIT |
+| [Source Serif 4](https://github.com/adobe-fonts/source-serif) (Adobe), Regular and Semibold TTF | The interface's typeface, bundled in `src/edith/ui/fonts/` with its license | SIL OFL 1.1 |
 | SAM 3.1 via the Meta Model API | Segmenting UI elements (remote API) | Meta terms |
 | Muse Image via the Meta Model API | Only checked by `scripts/test_api.py`; not used by the app | Meta terms |
 | [PySide6-Essentials](https://doc.qt.io/qtforpython-6/) (Qt for Python) | The dot, the panel and the activity view (drawn with QPainter) | LGPL-3.0 |

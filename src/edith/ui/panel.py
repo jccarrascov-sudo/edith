@@ -24,12 +24,18 @@ from .agent import Agent
 from .hotkey import DEFAULT_OPEN, GlobalHotkeys, from_key_event
 
 DEFAULT_PRESENTATION = "Ctrl+Alt+P"
-from .theme import Theme, inset, raised
+from .fonts import SMALL_PX, TEXT_PX, font
+from .theme import Theme, glow, glow_extent, inset, raised, shadow_extent
 
 log = logging.getLogger(__name__)
 
 DOT = 40              # the dot's diameter
-M = 18                # transparent margin for the soft shadows
+DOT_GLOW = 6          # the closed dot's centered shadow
+PANEL_DEPTH = 6       # the open panel's shadows: offset and blur
+M_DOT = int(glow_extent(DOT_GLOW)) + 2           # transparent margin around the dot: its glow fits
+M = int(shadow_extent(PANEL_DEPTH)) + 2          # ...around the panel: offset + blur fit on every side
+PAD = 24              # the panel's inner margin, the same on all four sides
+TEXT_INSET = 14       # text inside the field and every line under it start on the same axis
 PANEL_W = 380
 RADIUS = 22
 FADE_MS = 180
@@ -45,14 +51,6 @@ class Actions:
     open_activity: Callable[["Edith"], None]
     quit: Callable[[], None]
     delete_everything: Callable[[], int] | None = None   # returns files deleted
-
-
-def font(size: float, light: bool = False) -> QFont:
-    f = QFont("Segoe UI Variable Text", 1)
-    f.setPointSizeF(size)
-    if light:
-        f.setWeight(QFont.Light)
-    return f
 
 
 class SoftButton(QAbstractButton):
@@ -73,7 +71,7 @@ class SoftButton(QAbstractButton):
         r = QRectF(6, 6, 30, 30)
         pressed = self.isDown() or self.isChecked()
         (inset if pressed else raised)(p, r, 15, pal, depth=2.5 if pressed else 3)
-        self.glyph(p, r, QColor(pal.accent if self.isChecked() else pal.muted))
+        self.glyph(p, r, QColor(pal.accent_text if self.isChecked() else pal.muted))
 
 
 def _thumbnail(path: str, w: int = 72, h: int = 42) -> QPixmap:
@@ -162,26 +160,33 @@ class Edith(QWidget):
     def _build(self) -> None:
         self.content = QWidget(self)
         outer = QVBoxLayout(self.content)
-        outer.setContentsMargins(M + 22, M + 20, M + 22, M + 12)
-        outer.setSpacing(10)
+        outer.setContentsMargins(M + PAD, M + PAD, M + PAD, M + PAD)
+        outer.setSpacing(12)
 
         self.field = QLineEdit()
-        self.field.setFont(font(10.5))
+        self.field.setFont(font(TEXT_PX))
         self.field.setPlaceholderText(self.agent.t("placeholder"))
         self.field.setFrame(False)
-        self.field.setMinimumHeight(30)
+        self.field.setFixedHeight(40)
+        self.field.setTextMargins(TEXT_INSET, 0, TEXT_INSET, 0)
         self.field.returnPressed.connect(self._enter)
         self.field.installEventFilter(self)   # catches the new shortcut while capturing
         outer.addWidget(self.field)
-        outer.addSpacing(6)
+
+        # Everything under the field starts where the field's text starts.
+        self.body = QWidget()
+        inner = QVBoxLayout(self.body)
+        inner.setContentsMargins(TEXT_INSET, 0, TEXT_INSET, 0)
+        inner.setSpacing(10)
+        outer.addWidget(self.body)
 
         self.status = QLabel()
-        self.status.setFont(font(9.5))
+        self.status.setFont(font(SMALL_PX))
         self.status.setWordWrap(True)
-        outer.addWidget(self.status)
+        inner.addWidget(self.status)
 
         self.answer = QLabel()
-        self.answer.setFont(font(10.5, light=True))
+        self.answer.setFont(font(TEXT_PX))
         self.answer.setWordWrap(True)
         self.answer.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.answer.setTextFormat(Qt.MarkdownText)   # Muse Spark answers with **bold** and lists
@@ -190,22 +195,22 @@ class Edith(QWidget):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QScrollArea.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        outer.addWidget(self.scroll)
+        inner.addWidget(self.scroll)
 
         # What was sent to the cloud, or "Answered locally": small and gray, only after an answer.
         self.foot = QLabel()
-        self.foot.setFont(font(8.5))
+        self.foot.setFont(font(SMALL_PX))
         self.foot.setWordWrap(True)
-        outer.addWidget(self.foot)
+        inner.addWidget(self.foot)
 
         # Key moments (at most 3, newest first, one line each, the time in gray). Shown only while
         # there is no answer on screen; a click asks about that moment. Never a pop-up.
         self.moments = QLabel()
-        self.moments.setFont(font(9.5))
+        self.moments.setFont(font(SMALL_PX))
         self.moments.setTextFormat(Qt.RichText)
         self.moments.setTextInteractionFlags(Qt.LinksAccessibleByMouse)
         self.moments.linkActivated.connect(self._ask_moment)
-        outer.addWidget(self.moments)
+        inner.addWidget(self.moments)
 
         # Under an edit's preview: "Based on: [thumbnail] source · 4 min ago".
         self.based = QWidget()
@@ -214,17 +219,17 @@ class Edith(QWidget):
         based.setSpacing(10)
         self.thumb = QLabel()
         self.based_text = QLabel()
-        self.based_text.setFont(font(8.5))
+        self.based_text.setFont(font(SMALL_PX))
         self.based_text.setWordWrap(True)
         based.addWidget(self.thumb)
         based.addWidget(self.based_text, 1)
         self.based.hide()
-        outer.addWidget(self.based)
+        inner.addWidget(self.based)
 
         # Always there while Edith's last edit can be undone.
         self.btn_undo = self._text_button(self.agent.t("undo_label"), lambda: self.agent.submit("undo"))
         self.btn_undo.hide()
-        outer.addWidget(self.btn_undo, 0, Qt.AlignLeft)
+        inner.addWidget(self.btn_undo, 0, Qt.AlignLeft)
 
         # Options (shown by the options button): two short lines of gray text buttons, so they
         # fit in both languages. Activity, pause, quit; then the global shortcut.
@@ -256,7 +261,7 @@ class Edith(QWidget):
             row.addStretch(1)
             menu.addLayout(row)
         self.menu.hide()
-        outer.addWidget(self.menu)
+        inner.addWidget(self.menu)
 
         # Hover-only row: audio and options on the right. Space is kept, so the panel does not
         # jump when the mouse comes in; the buttons only fade in.
@@ -279,13 +284,13 @@ class Edith(QWidget):
         self.hover_row.setGraphicsEffect(self.hover_fx)
         self._hover_fade = QVariantAnimation(self, duration=150)
         self._hover_fade.valueChanged.connect(lambda v: self.hover_fx.setOpacity(float(v)))
-        outer.addWidget(self.hover_row)
+        inner.addWidget(self.hover_row)
         self._label_memory()
 
     def _text_button(self, label: str, on_click) -> QPushButton:
         b = QPushButton(label)
         b.setFlat(True)
-        b.setFont(font(9.5))
+        b.setFont(font(SMALL_PX))
         b.setCursor(Qt.PointingHandCursor)
         b.setFocusPolicy(Qt.NoFocus)   # the text field keeps the focus
         b.clicked.connect(on_click)
@@ -295,13 +300,13 @@ class Edith(QWidget):
     def _restyle(self) -> None:
         pal = self.theme.palette
         self.field.setStyleSheet(f"QLineEdit {{ background: transparent; border: none; color: {pal.text};"
-                                 f" selection-background-color: {pal.accent}; selection-color: {pal.bg}; }}")
+                                 f" selection-background-color: {pal.accent_text}; selection-color: {pal.bg}; }}")
         self.status.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.answer.setStyleSheet(f"color: {pal.text}; background: transparent;")
         self.foot.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.based_text.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.btn_undo.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {pal.muted};"
-                                    f" padding: 0; }} QPushButton:hover {{ color: {pal.accent}; }}")
+                                    f" padding: 0; }} QPushButton:hover {{ color: {pal.accent_text}; }}")
         self.moments.setStyleSheet("background: transparent;")
         self._render_moments()
         self.scroll.setStyleSheet(
@@ -344,20 +349,19 @@ class Edith(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         if not self.expanded:
             ring, center = self.dot_geometry()
-            raised(p, ring, DOT / 2, pal, depth=4)
+            glow(p, ring, DOT / 2, pal, spread=DOT_GLOW)
             p.setPen(Qt.NoPen)
             p.setBrush(self.dot_color)
             p.drawEllipse(center, 5, 5)
             return
-        raised(p, QRectF(M, M, self.width() - 2 * M, self.height() - 2 * M), RADIUS, pal, depth=6)
-        g = self.field.geometry()
-        inset(p, QRectF(g).adjusted(-14, -6, 14, 6), 16, pal, depth=2.5)
+        raised(p, QRectF(M, M, self.width() - 2 * M, self.height() - 2 * M), RADIUS, pal, depth=PANEL_DEPTH)
+        inset(p, QRectF(self.field.geometry()), 16, pal, depth=2.5)
 
     def dot_geometry(self) -> tuple[QRectF, QPointF]:
         """The raised circle and the center of the status dot. Both come from the widget's own
         rectangle (equal margins all round, so the soft shadows are never cut), so the dot and
         the circle share one geometric center: the widget's."""
-        ring = QRectF(self.rect()).adjusted(M, M, -M, -M)
+        ring = QRectF(self.rect()).adjusted(M_DOT, M_DOT, -M_DOT, -M_DOT)
         return ring, ring.center()
 
     # --- open / close ---------------------------------------------------------------------------
@@ -366,7 +370,7 @@ class Edith(QWidget):
         self._no_activate(True)
         self.content.hide()
         self.btn_options.setChecked(False)
-        self.setFixedSize(DOT + 2 * M, DOT + 2 * M)
+        self.setFixedSize(DOT + 2 * M_DOT, DOT + 2 * M_DOT)
         self.move(self.dot_pos)
         self.update()
 
@@ -412,6 +416,20 @@ class Edith(QWidget):
             log.debug("could not capture the target field", exc_info=True)
             self.agent.target = None
 
+    def panel_origin(self, w: int, h: int) -> tuple[int, int]:
+        """Where the open panel goes: centered on the dot, with the text field where the dot was
+        (so it opens from the dot's center), moved back inside the screen near an edge. The
+        transparent shadow margin may stay off screen; the panel itself never does."""
+        cx = self.dot_pos.x() + (DOT + 2 * M_DOT) / 2
+        cy = self.dot_pos.y() + (DOT + 2 * M_DOT) / 2
+        x = round(cx - w / 2)
+        y = round(cy - (M + PAD + self.field.height() / 2))
+        screen = self.screen().availableGeometry() if self.screen() else None
+        if screen:
+            x = min(max(screen.left() - M, x), screen.right() + 1 + M - w)
+            y = min(max(screen.top() - M, y), screen.bottom() + 1 + M - h)
+        return x, y
+
     def toggle(self) -> None:
         """The global shortcut: open (with the cursor in the field) or close."""
         if self.expanded and self.isActiveWindow():
@@ -435,7 +453,7 @@ class Edith(QWidget):
         if not self.expanded:
             return
         w = PANEL_W + 2 * M
-        inner = w - 2 * (M + 22)
+        inner = PANEL_W - 2 * PAD - 2 * TEXT_INSET
         has_answer = bool(self.answer.text())
         self.scroll.setVisible(has_answer)
         if has_answer:
@@ -444,14 +462,16 @@ class Edith(QWidget):
         self.foot.setVisible(has_answer and bool(self.foot.text()))
         self.moments.setVisible(not has_answer and not self.agent.busy and bool(self._moments))
         lay = self.content.layout()
-        h = lay.totalHeightForWidth(w) if lay.hasHeightForWidth() else lay.sizeHint().height()
+        self.body.layout().invalidate()            # sizes cached before a widget was shown or hidden
+        lay.invalidate()
+        # Field + body + equal margins, measured on the body itself: the outer layout may keep a
+        # height cached from before a widget under the field was shown, hidden or resized.
+        bw = PANEL_W - 2 * PAD
+        body_h = max(self.body.heightForWidth(bw), self.body.minimumSizeHint().height())
+        h = 2 * (M + PAD) + self.field.height() + lay.spacing() + body_h
         self.content.setGeometry(0, 0, w, h)
         self.setFixedSize(w, h)
-        screen = (self.screen().availableGeometry() if self.screen() else None)
-        x, y = self.dot_pos.x(), self.dot_pos.y()
-        if screen:
-            x = min(max(screen.left(), x), screen.right() - w)
-            y = min(max(screen.top(), y), screen.bottom() - h)
+        x, y = self.panel_origin(w, h)
         self.move(x, y)
         self.update()
 
@@ -492,7 +512,7 @@ class Edith(QWidget):
         pal = self.theme.palette
         old = self.agent.target.text if self.agent.target else ""
         self.answer.setTextFormat(Qt.RichText)
-        self.answer.setText(preview_html(old, p, pal.accent, pal.muted, pal.text))
+        self.answer.setText(preview_html(old, p, pal.accent_text, pal.muted, pal.text))
         self.thumb.setPixmap(_thumbnail(p.frame) if p.frame else QPixmap())
         self.thumb.setVisible(bool(p.frame))
         self.based_text.setText(self.agent.t("based_on", source=p.source or "memory", ago=self._ago(p.source_ts)))
@@ -564,7 +584,8 @@ class Edith(QWidget):
 
         pal = self.theme.palette
         metrics = QFontMetrics(self.moments.font())
-        width = PANEL_W - 2 * 22 - metrics.horizontalAdvance("00:00") - 2 * metrics.horizontalAdvance(" ") - 8
+        width = (PANEL_W - 2 * PAD - 2 * TEXT_INSET - metrics.horizontalAdvance("00:00")
+                 - 3 * metrics.horizontalAdvance(" ") - 6)
         rows = []
         for i, m in enumerate(self._moments):
             when = datetime.fromtimestamp(m["ts"]).strftime("%H:%M")
@@ -745,7 +766,7 @@ class Edith(QWidget):
         except (KeyError, TypeError, ValueError):
             from PySide6.QtGui import QGuiApplication
             g = QGuiApplication.primaryScreen().availableGeometry()
-            return QPoint(g.right() - DOT - 2 * M - 12, g.top() + int(g.height() * 0.62))
+            return QPoint(g.right() - DOT - 2 * M_DOT - 12, g.top() + int(g.height() * 0.62))
 
     def _save_state(self) -> None:
         try:

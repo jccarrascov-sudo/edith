@@ -39,5 +39,8 @@ desktop.ini
 # Local state (API cost ledger, session)
 state/
 
+# Local UI screenshots for review (scripts write them; not part of the repo)
+capturas-ui/
+
 # Generated demo data (portal DB, invoices.xlsx)
 demo/data/

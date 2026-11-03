@@ -298,3 +298,26 @@ The user asked that Edith keep "any important detail" of the day, and that impor
 - Tests: 5 new (delete keeps machines and costs, rotating log + errors not fatal, onboarding
   pages, shortcut change in onboarding, two-click delete): 169 pass.
 
+## Visual adjustments (Nov 3, user's request)
+- Typeface: Source Serif 4 (Adobe, SIL OFL 1.1), Regular and Semibold TTF downloaded once from
+  adobe-fonts/source-serif and bundled in src/edith/ui/fonts with OFL.txt (package data); no
+  other font remains (a test checks the source for "Segoe"). 14/12/28 px, 400/600.
+- Colors: text #1A1B1E / #F2F3F5, secondary at 60 %, accent #5B7CFA / #7AA7FF. Measured WCAG
+  contrast: two requested values were under 4.5:1 in the light theme (secondary at 60 %: 4.24;
+  #5B7CFA as text: 3.02). Resolved without changing the requested colors elsewhere: secondary
+  62 % in light (4.51), accent text #2A55F9 in light (4.59); dark: text 13.7, secondary 5.86,
+  accent 6.36. A test checks every text color against its background.
+- Shadows: margins computed from offset + blur (`theme.shadow_extent`); the closed dot now has a
+  centered symmetric glow (no offset) so it does not look shifted; dark shadows at 0.75.
+- Centering: dot and circle from one rectangle; panel with equal 24 px inner margins, one text
+  axis for the field and everything under it, opening centered on the dot (field where the dot
+  was) and moved back on screen near an edge (tested at a screen corner).
+- Found in the screenshots and fixed: the placeholder no longer fit in the new font (now "Ask
+  about your day, or say "do the rest""); key-moment lines were cut instead of elided; and the
+  panel height came from a height Qt had cached before the edit preview was shown, so the hints
+  overlapped the preview: the height is now measured from the field and the body directly.
+- Verification (real desktop, both themes, capturas-ui/): window 64x64 at (900,400); circle
+  center = dot center = (32, 32) in the window = (932, 432) on screen; the centroid of the
+  dot's pixels is (32.0, 32.0); open panel centered at x 932 = the dot's center; field margins
+  24/24/24. Tests: 172 pass.
+

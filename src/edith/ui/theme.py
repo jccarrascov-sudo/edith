@@ -12,7 +12,21 @@ from PySide6.QtCore import QObject, QRectF, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPainterPath
 
 THEME_FADE_MS = 250
-ACCENT = "#5B7CFA"   # the only accent color, in both themes
+
+
+def over(fg: str, bg: str, alpha: float) -> str:
+    """`fg` at `alpha` opacity over `bg`, as a solid color (the panel is one flat color)."""
+    a, b = QColor(fg), QColor(bg)
+    return QColor.fromRgbF(*(a.getRgbF()[i] * alpha + b.getRgbF()[i] * (1 - alpha) for i in range(3))).name()
+
+
+def contrast(fg: str, bg: str) -> float:
+    """WCAG contrast ratio of two colors (1 to 21; text needs at least 4.5)."""
+    def lum(c: str) -> float:
+        ch = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in QColor(c).getRgbF()[:3]]
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+    hi, lo = sorted((lum(fg), lum(bg)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
 
 
 @dataclass(frozen=True)
@@ -24,16 +38,21 @@ class Palette:
     muted: str         # secondary text, the agent's status line
     idle: str          # the dot when nothing is happening
     paused: str        # the dot while the memory is paused: dimmer than idle
-    accent: str = ACCENT
+    accent: str        # the one accent: the dot while busy, sparklines, outlines
+    accent_text: str   # the accent when it is text (it must reach 4.5:1 on bg)
     shadow_alpha: float = 0.55   # how strong both shadows are
 
 
+# Secondary text is the main text at 60 % opacity; in the light theme 60 % gives 4.24:1, under
+# the 4.5:1 minimum, so it is 62 % there (4.51:1). The light accent #5B7CFA is 3.0:1 on the
+# background: it stays for the dot, lines and outlines, and accent TEXT uses the same hue,
+# darker (#2A55F9, 4.6:1). All pairs are checked by tests/test_ui.py.
 LIGHT = Palette(bg="#E6E9EF", shadow_light="#FFFFFF", shadow_dark="#A3B1C6",
-                text="#3B4048", muted="#8A919C", idle="#A9AFB9", paused="#CDD2DA",
-                shadow_alpha=0.6)
+                text="#1A1B1E", muted=over("#1A1B1E", "#E6E9EF", 0.62), idle="#A9AFB9", paused="#CDD2DA",
+                accent="#5B7CFA", accent_text="#2A55F9", shadow_alpha=0.6)
 DARK = Palette(bg="#23262B", shadow_light="#2D3036", shadow_dark="#191B1F",
-               text="#D4D7DD", muted="#7C828C", idle="#555B64", paused="#383C42",
-               shadow_alpha=0.9)
+               text="#F2F3F5", muted=over("#F2F3F5", "#23262B", 0.60), idle="#555B64", paused="#383C42",
+               accent="#7AA7FF", accent_text="#7AA7FF", shadow_alpha=0.75)
 
 
 def blend(a: Palette, b: Palette, t: float) -> Palette:
@@ -96,6 +115,21 @@ class Theme(QObject):
 
 
 # --- relief -------------------------------------------------------------------------------------
+# A shadow of depth d is offset d and blurred over int(2.2 d) one-pixel steps of 0.9 px, so it
+# reaches d + blur px past its shape: windows keep that much transparent margin on every side.
+
+def blur_of(depth: float) -> int:
+    return int(depth * 2.2)
+
+
+def shadow_extent(depth: float) -> float:
+    """How far a raised shape's shadows reach past it (offset + blur)."""
+    return depth + (blur_of(depth) - 1) * 0.9
+
+
+def glow_extent(spread: float) -> float:
+    return (blur_of(spread) - 1) * 0.9
+
 
 def _rounded(rect: QRectF, radius: float) -> QPainterPath:
     path = QPainterPath()
@@ -114,11 +148,22 @@ def _soft(p: QPainter, rect: QRectF, radius: float, color: str, alpha: float, bl
         p.drawRoundedRect(rect.adjusted(-grow, -grow, grow, grow), radius + grow, radius + grow)
 
 
-def raised(p: QPainter, rect: QRectF, radius: float, pal: Palette, depth: float = 5) -> None:
-    """A shape lifted off the background: light shadow up-left, dark shadow down-right."""
+def glow(p: QPainter, rect: QRectF, radius: float, pal: Palette, spread: float = 5) -> None:
+    """A shape lifted off the background by a centered, symmetric soft shadow (no offset)."""
     p.save()
     p.setRenderHint(QPainter.Antialiasing)
-    blur = int(depth * 2.2)
+    _soft(p, rect, radius, pal.shadow_dark, pal.shadow_alpha * 0.8, blur_of(spread))
+    p.setBrush(QColor(pal.bg))
+    p.drawRoundedRect(rect, radius, radius)
+    p.restore()
+
+
+def raised(p: QPainter, rect: QRectF, radius: float, pal: Palette, depth: float = 5) -> None:
+    """A shape lifted off the background: light shadow up-left, dark shadow down-right, with the
+    same offset and blur."""
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing)
+    blur = blur_of(depth)
     _soft(p, rect.translated(-depth, -depth), radius, pal.shadow_light, pal.shadow_alpha, blur)
     _soft(p, rect.translated(depth, depth), radius, pal.shadow_dark, pal.shadow_alpha, blur)
     p.setBrush(QColor(pal.bg))

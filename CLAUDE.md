@@ -94,9 +94,15 @@ needed at that moment, it is not shown.
 - Agent mode: no overlays or outlines on screen; only one gray line of text in the panel
   ("Writing row 3 of 29 in ...").
 - Soft UI: one flat background color; panel and buttons the SAME color; relief only from two
-  soft shadows (light up-left, dark down-right); pressed/active = inset; no borders or
-  dividers; 16-24 px corners; ONE accent color, everything else gray; clean sans-serif, lots
-  of empty space.
+  soft shadows (light up-left, dark down-right, equal offset and blur); the closed dot has a
+  centered symmetric glow; window margin >= offset + blur on all sides; pressed/active = inset;
+  no borders or dividers; 16-24 px corners; ONE accent color, everything else gray.
+- Visual adjustments (user, Nov 3): font Source Serif 4 ONLY (bundled, OFL; 400 text, 600
+  titles/big numbers; 14 px text, 12 px secondary, 28 px big numbers). Text #1A1B1E light /
+  #F2F3F5 dark, secondary = text at 60 % (62 % in light: 60 % fails 4.5:1); accent #5B7CFA
+  light (text in accent: #2A55F9, 4.6:1) / #7AA7FF dark; every text >= 4.5:1 (tested). Panel:
+  equal 24 px inner margins, one text axis, opens centered on the dot, kept on screen.
+  Screenshots + centers: capturas-ui/ (local).
 - Charts only where there is data, in a separate view (Activity: RAM, VRAM, memory activity
   in the last 10 min): 1.5-2 px accent sparkline, no axes/grid/legend, at most a 10-15 %
   fill under the line, the important number large on top, exact values only in a tooltip.

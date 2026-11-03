@@ -7,10 +7,12 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from .fonts import SEMIBOLD, TEXT_PX, TITLE_PX, font
 from .hotkey import from_key_event
-from .theme import raised
+from .theme import raised, shadow_extent
 
-W, H, M = 460, 280, 18
+DEPTH = 6
+W, H, M = 460, 280, int(shadow_extent(DEPTH)) + 2
 
 
 class Onboarding(QWidget):
@@ -18,8 +20,6 @@ class Onboarding(QWidget):
 
     def __init__(self, panel):
         super().__init__(None, Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
-        from .panel import font
-
         self.panel, self.theme, self.t = panel, panel.theme, panel.agent.t
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setWindowTitle("Edith")
@@ -27,12 +27,12 @@ class Onboarding(QWidget):
         self.page = 0
         self.capturing = False
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(M + 34, M + 30, M + 34, M + 22)
+        lay.setContentsMargins(M + 32, M + 32, M + 32, M + 32)   # the same on all four sides
         lay.setSpacing(12)
         self.title = QLabel()
-        self.title.setFont(font(15, light=True))
+        self.title.setFont(font(TITLE_PX, SEMIBOLD))
         self.body = QLabel()
-        self.body.setFont(font(10.5))
+        self.body.setFont(font(TEXT_PX))
         self.body.setWordWrap(True)
         self.body.setTextFormat(Qt.PlainText)
         lay.addWidget(self.title)
@@ -42,7 +42,7 @@ class Onboarding(QWidget):
         self.next = QPushButton()
         for b in (self.change, self.next):
             b.setFlat(True)
-            b.setFont(font(10))
+            b.setFont(font(TEXT_PX))
             b.setCursor(Qt.PointingHandCursor)
             b.setFocusPolicy(Qt.NoFocus)
         self.change.clicked.connect(self._start_capture)
@@ -127,7 +127,7 @@ class Onboarding(QWidget):
         pal = self.theme.palette
         self.title.setStyleSheet(f"color: {pal.text}; background: transparent;")
         self.body.setStyleSheet(f"color: {pal.muted}; background: transparent;")
-        for b, color in ((self.change, pal.muted), (self.next, pal.accent)):
+        for b, color in ((self.change, pal.muted), (self.next, pal.accent_text)):
             b.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {color}; padding: 0; }}"
                             f" QPushButton:hover {{ color: {pal.text}; }}")
         self.update()
@@ -136,7 +136,7 @@ class Onboarding(QWidget):
         pal = self.theme.palette
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        raised(p, QRectF(M, M, W, H), 24, pal, depth=6)
+        raised(p, QRectF(M, M, W, H), 24, pal, depth=DEPTH)
         p.setPen(Qt.NoPen)
         for i in range(3):                              # where we are: three small dots
             p.setBrush(QColor(pal.accent if i == self.page else pal.idle))

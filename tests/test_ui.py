@@ -28,7 +28,24 @@ class PaletteTests(unittest.TestCase):
         self.assertEqual((theme.LIGHT.bg, theme.LIGHT.shadow_light), ("#E6E9EF", "#FFFFFF"))
         self.assertEqual((theme.DARK.bg, theme.DARK.shadow_light, theme.DARK.shadow_dark),
                          ("#23262B", "#2D3036", "#191B1F"))
-        self.assertEqual(theme.LIGHT.accent, theme.DARK.accent)  # one accent only
+        self.assertEqual((theme.LIGHT.text, theme.DARK.text), ("#1A1B1E", "#F2F3F5"))
+        self.assertEqual((theme.LIGHT.accent, theme.DARK.accent), ("#5B7CFA", "#7AA7FF"))
+        self.assertEqual(theme.DARK.muted.upper(), theme.over("#F2F3F5", "#23262B", 0.60).upper())
+
+    def test_every_text_color_reaches_4_5_to_1(self):
+        for pal in (theme.LIGHT, theme.DARK):
+            for name in ("text", "muted", "accent_text"):
+                self.assertGreaterEqual(theme.contrast(getattr(pal, name), pal.bg), 4.5, (pal.bg, name))
+
+    def test_the_bundled_font_is_the_only_one(self):
+        from edith.ui import fonts
+
+        self.assertTrue(fonts.load())
+        f = fonts.font(fonts.BIG_PX, fonts.SEMIBOLD)
+        self.assertEqual((f.family(), f.pixelSize(), f.weight()), ("Source Serif 4", 28, 600))
+        src = "".join(p.read_text(encoding="utf-8") for p in Path(fonts.__file__).parent.glob("*.py"))
+        self.assertNotIn("Segoe", src)
+        self.assertTrue((Path(fonts.__file__).parent / "fonts" / "OFL.txt").exists())
 
     def test_blend_goes_from_one_palette_to_the_other(self):
         self.assertEqual(QColor(theme.blend(theme.LIGHT, theme.DARK, 0).bg), QColor(theme.LIGHT.bg))
@@ -186,9 +203,36 @@ class PanelTests(unittest.TestCase):
         self.assertEqual(ring.center(), widget_center)
         self.assertEqual(dot, widget_center)
         self.assertEqual(ring.width(), self.panel_mod.DOT)
-        m = self.panel_mod.M
+        m = self.panel_mod.M_DOT
         self.assertEqual((ring.left(), ring.top()), (m, m))                    # same margin all round
         self.assertEqual(self.edith.width() - ring.right(), m)
+        from edith.ui.theme import glow_extent, shadow_extent
+        self.assertGreaterEqual(m, glow_extent(self.panel_mod.DOT_GLOW))       # the glow is never cut
+        self.assertGreaterEqual(self.panel_mod.M, shadow_extent(self.panel_mod.PANEL_DEPTH))
+
+    def test_panel_opens_centered_on_the_dot_and_stays_on_screen(self):
+        from PySide6.QtCore import QPoint
+
+        e, P = self.edith, self.panel_mod
+        screen = e.screen().availableGeometry()
+        e.dot_pos = QPoint(screen.center().x() - 38, screen.center().y() - 38)
+        e.show()
+        e.expand(activate=False)
+        e.content.layout().activate()
+        _app.processEvents()
+        g = e.geometry()
+        dot_cx = e.dot_pos.x() + (P.DOT + 2 * P.M_DOT) / 2
+        self.assertLessEqual(abs(g.x() + g.width() / 2 - dot_cx), 1)
+        field = e.field.geometry()
+        self.assertEqual(field.left() - P.M, field.top() - P.M)               # equal margins left/top
+        self.assertEqual(g.width() - P.M - field.right() - 1, field.left() - P.M)   # and right
+        e.collapse()
+        e.dot_pos = QPoint(screen.right() - 30, screen.bottom() - 30)         # at the corner
+        e.expand(activate=False)
+        _app.processEvents()
+        g = e.geometry().adjusted(P.M, P.M, -P.M, -P.M)                       # the panel without its shadow
+        self.assertTrue(screen.contains(g), (screen, g))
+        e.collapse()
 
     def test_paused_memory_dims_the_dot(self):
         self.assertEqual(self.edith._dot_target(), theme.LIGHT.idle)

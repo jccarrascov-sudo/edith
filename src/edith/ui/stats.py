@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QGridLayout, QToolTip, QWidget
 
 from ..config import Config
 from .theme import Theme, raised
+from .fonts import BIG_PX, SEMIBOLD, SMALL_PX, font
 
 SAMPLE_S = 5
 MARGIN = 18          # room for the soft shadows around each card
@@ -125,14 +126,12 @@ class Card(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         raised(p, QRectF(MARGIN, MARGIN, CARD_W, CARD_H), 20, pal, depth=6)
         p.setPen(QColor(pal.muted))
-        p.setFont(QFont("Segoe UI", 9))
+        p.setFont(font(SMALL_PX))
         p.drawText(QRectF(MARGIN + 18, MARGIN + 14, CARD_W - 36, 18), Qt.AlignLeft, self.label)
         if not self.series:
             return
         p.setPen(QColor(pal.text))
-        big = QFont("Segoe UI Variable Display", 24)
-        big.setWeight(QFont.Light)
-        p.setFont(big)
+        p.setFont(font(BIG_PX, SEMIBOLD))
         p.drawText(QRectF(MARGIN + 18, MARGIN + 30, CARD_W - 36, 40), Qt.AlignLeft | Qt.AlignVCenter,
                    self.fmt(self.series[-1][1]))
         pts = spark_points([v for _, v in self.series], self._line_rect())

@@ -35,3 +35,6 @@ edith-ui = "edith.ui.app:launch"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"edith.ui" = ["fonts/*.ttf", "fonts/OFL.txt"]

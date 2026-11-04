@@ -596,13 +596,11 @@ def scene_4(ctx):
 
 def scene_5(ctx):
     edith = ctx["edith"]
-    edith.ask("haz lo mismo para Golden Spoon Supplies")
-    edith.wait_for("Hecho en", "Done in", timeout=60)
-    time.sleep(2)
+    # While a preview waits, Enter applies it (seen live: the "corrige" typed then never went out).
+    # So like a person: keep the letter, notice the currency, then correct it.
+    _preview_then(edith, "haz lo mismo para Golden Spoon Supplies")
     before = edith.lessons()
-    edith.open_panel()                                      # the preview waits in the panel
-    type_human("corrige: el monto va con S/ en vez de USD", check=lambda: guard(pid=edith.pid, wait=2))
-    edith.press("enter")
+    edith.ask("corrige: el monto va con S/ en vez de USD")
     end = time.monotonic() + 90                            # the lesson is in Edith's lessons file
     while edith.lessons() <= before and time.monotonic() < end:
         time.sleep(0.7)
@@ -645,7 +643,31 @@ def scene_7(ctx):
         rects.append(((r.right - r.left) * (r.bottom - r.top), r))
     panel = max(rects, key=lambda a: a[0])[1]
     move_human((panel.left + panel.right) // 2, (panel.top + panel.bottom) // 2)   # the options appear on hover
-    time.sleep(1)
+    time.sleep(1.2)
+    # "···" (options) is a drawn button with no name: the rightmost button on the text field's row.
+    field, buttons = None, []
+    for h in windows_of(edith.pid):
+        for c, _d in auto.WalkControl(auto.ControlFromHandle(h), includeTop=True, maxDepth=12):
+            r = c.BoundingRectangle
+            if r.width() <= 0:
+                continue
+            if c.ControlTypeName == "EditControl" and field is None:
+                field = r
+            elif c.ControlTypeName == "ButtonControl":
+                buttons.append(r)
+    if field is None:
+        raise SceneError("the panel's text field was not found")
+    mid = (field.top + field.bottom) // 2
+    row = [b for b in buttons if b.top - 12 <= mid <= b.bottom + 12 and b.left >= field.right - 4]
+    if not row:
+        raise SceneError("the options button was not found")
+    dots = max(row, key=lambda b: b.right)
+    import pyautogui
+
+    move_human((dots.left + dots.right) // 2, (dots.top + dots.bottom) // 2)
+    time.sleep(0.3)
+    pyautogui.click()
+    time.sleep(1.0)
     button = None
     for h in windows_of(edith.pid):
         for c, _d in auto.WalkControl(auto.ControlFromHandle(h), includeTop=True, maxDepth=12):
@@ -657,8 +679,6 @@ def scene_7(ctx):
     rc = button.BoundingRectangle
     move_human((rc.left + rc.right) // 2, (rc.top + rc.bottom) // 2)
     time.sleep(0.4)
-    import pyautogui
-
     pyautogui.click()
     time.sleep(6)
 
@@ -698,6 +718,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="1,2,3,4,5,6,7")
     ap.add_argument("--lang", default="es")
+    ap.add_argument("--prep", default="", help="scenes to run first WITHOUT recording (e.g. 2,3 for the recipe)")
     args = ap.parse_args()
     import pyautogui
 
@@ -714,6 +735,10 @@ def main() -> int:
         ctx["desktop"] = desk
         ctx["edith"] = Edith(args.lang)
         try:
+            for n in [int(x) for x in args.prep.split(",") if x.strip()]:
+                SCENES[n][0](ctx)                          # not recorded: only what later scenes need
+                ok.setdefault(n, 0.0)
+                time.sleep(2)
             for n in wanted:
                 fn, min_s, what = SCENES[n]
                 if n in NEEDS and NEEDS[n] in wanted and NEEDS[n] not in ok:

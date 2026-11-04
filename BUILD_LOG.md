@@ -445,3 +445,27 @@ Saludos,". 196 tests pass.
   proof stops the run): 209 pass.
 - Not yet: lessons (P2), escalation (P3), levels 3-5, automatic detection, free mode. The real
   "learn this" from Windows' recent files was tested with a fixture list, not with Word open.
+
+## Priority 2 (Nov 4): lessons, the simple version
+- Triggers: (a) the user corrects the result in the preview (Correct -> the text becomes editable,
+  one paragraph per line; Enter applies their version at once), (b) "corrige: ..." / "correct: ...".
+  (c) and (d) are not built (no dead code behind a flag).
+- `recipes/lessons.py`: the edit is applied to the .docx paragraph by paragraph, touching only the
+  runs the change falls in (first try put an inserted word inside the bold client name: an
+  insertion now goes to the run that starts at that position). Muse Spark changes the program so
+  the correction holds for every row and writes the lesson line; the new program is verified (a:
+  the corrected document is the new proof; b: the result must change; both: two more rows work,
+  no row values as literals), with up to 2 corrections. Each lesson keeps the previous program and
+  proof as a version: Discard goes back (and drops later lessons of that recipe built on it).
+- A deviation from the spec, on purpose: the lesson is summarized by Muse Spark in the same call
+  that changes the program (not by the local model), and lessons live in their recipe's program, so
+  the next run applies them with no model at all. Applying one recipe's lessons when compiling
+  another was tried and removed: the user's own demonstration must stay the truth that a new
+  recipe is verified against.
+- Panel: Correct under a single-document preview; "Aprendí: ... · Descartar" in the gray line; "· N
+  lección(es) aplicada(s)" next to "Compilado por Muse Spark · Nivel N · Hecho en X s"; lessons under
+  their recipe in Options -> Recipes. Screenshots: the editor first left the answer's empty space
+  and measured its height in lines (QPlainTextEdit): fixed, both themes checked.
+- Demo-check now 11 steps (lesson-a, applied-a, lesson-b, applied-b, discard): 5/5 runs, 11 steps each (lesson a 19-22 s, lesson b 16-22 s, next runs 0.44-0.62 s).
+- Tests: 6 new (edit applied with formatting kept, "corrige" recognized, a lesson after one
+  correction, an instruction that changes nothing is refused, discard restores): 215 pass.

@@ -17,7 +17,7 @@ from typing import Callable
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (QAbstractButton, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QScrollArea, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from ..config import ROOT
 from .agent import Agent
@@ -163,6 +163,7 @@ class Edith(QWidget):
         agent.footnote.connect(self._show_footnote)
         agent.preview.connect(self._show_preview)
         agent.result_preview.connect(self._show_result_preview)
+        agent.lesson.connect(self._show_lesson)
         agent.undoable.connect(self._show_undo)
         if hotkeys:
             hotkeys.pressed.connect(self._hotkey)
@@ -221,9 +222,23 @@ class Edith(QWidget):
         inner.addWidget(self.scroll)
 
         # What was sent to the cloud, or "Answered locally": small and gray, only after an answer.
+        # A recipe's result corrected in place ("Correct" under its preview): Enter applies it.
+        self.editor = QPlainTextEdit()
+        self.editor.setFont(font(TEXT_PX))
+        self.editor.setFrameShape(QPlainTextEdit.NoFrame)
+        self.editor.document().setDocumentMargin(0)        # its text on the panel's one text axis
+        self.editor.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.editor.textChanged.connect(lambda: self.editor.isVisible() and self._fit_editor())
+        self.editor.installEventFilter(self)
+        self.editor.hide()
+        inner.addWidget(self.editor)
+
         self.foot = QLabel()
         self.foot.setFont(font(SMALL_PX))
         self.foot.setWordWrap(True)
+        self.foot.setTextFormat(Qt.RichText)
+        self.foot.setTextInteractionFlags(Qt.LinksAccessibleByMouse)
+        self.foot.linkActivated.connect(self._lesson_link)
         inner.addWidget(self.foot)
 
         # Key moments (at most 3, newest first, one line each, the time in gray). Shown only while
@@ -253,6 +268,9 @@ class Edith(QWidget):
         self.btn_undo = self._text_button(self.agent.t("undo_label"), lambda: self.agent.submit("undo"))
         self.btn_undo.hide()
         inner.addWidget(self.btn_undo, 0, Qt.AlignLeft)
+        self.btn_fix = self._text_button(self.agent.t("fix_label"), self._start_fix)
+        self.btn_fix.hide()
+        inner.addWidget(self.btn_fix, 0, Qt.AlignLeft)
 
         # Options (shown by the options button): two short lines of gray text buttons, so they
         # fit in both languages. Activity, pause, quit; then the global shortcut.
@@ -274,7 +292,7 @@ class Edith(QWidget):
         self.btn_delete = self._text_button(self.agent.t("delete_all"), self._delete_everything)
         self.btn_delete.setVisible(self.actions.delete_everything is not None)
         self._delete_armed = False
-        self.text_buttons = (self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_quit, self.btn_hotkey,
+        self.text_buttons = (self.btn_fix, self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_quit, self.btn_hotkey,
                              self.btn_default, self.btn_local, self.btn_presentation, self.btn_delete)
         groups = ((self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_local, self.btn_presentation),
                   ((self.btn_hotkey, self.btn_default),),
@@ -332,6 +350,8 @@ class Edith(QWidget):
                                  f" selection-background-color: {pal.accent_text}; selection-color: {pal.bg}; }}")
         self.status.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.answer.setStyleSheet(f"color: {pal.text}; background: transparent;")
+        self.editor.setStyleSheet(f"QPlainTextEdit {{ color: {pal.text}; background: transparent; border: none;"
+                                  f" selection-background-color: {pal.accent_text}; selection-color: {pal.bg}; }}")
         self.foot.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.based_text.setStyleSheet(f"color: {pal.muted}; background: transparent;")
         self.btn_undo.setStyleSheet(f"QPushButton {{ background: transparent; border: none; color: {pal.muted};"
@@ -490,8 +510,9 @@ class Edith(QWidget):
         w = PANEL_W + 2 * M
         inner = PANEL_W - 2 * PAD - 2 * TEXT_INSET
         has_answer = bool(self.answer.text())
-        self.scroll.setVisible(has_answer)
-        if has_answer:
+        editing = self.editor.isVisible()                  # a result being corrected takes its place
+        self.scroll.setVisible(has_answer and not editing)
+        if has_answer and not editing:
             self.scroll.setFixedHeight(min(ANSWER_MAX_H, self.answer.heightForWidth(inner - 10) + 14))
         self.status.setVisible(bool(self.status.text()))
         self.foot.setVisible(has_answer and bool(self.foot.text()))
@@ -515,7 +536,7 @@ class Edith(QWidget):
         typed = self.field.text().strip()
         if self.agent.awaiting:
             if not typed or typed == getattr(self, "_last_request", None):
-                self.agent.decide(True)
+                self.agent.decide(True, self.editor.toPlainText() if self.editor.isVisible() else None)
             return
         if typed and not self.agent.busy:
             self._last_request = typed
@@ -566,9 +587,13 @@ class Edith(QWidget):
 
         if p is None:
             self.based.hide()
+            self.btn_fix.hide()
+            self.editor.hide()
+            self.scroll.show()
             self.foot.setText(self._footnote)
             self._fit()
             return
+        self._result = p
         pal = self.theme.palette
         name = p.outputs[0].final.name
         if len(p.outputs) > 1:
@@ -578,12 +603,63 @@ class Edith(QWidget):
                             f"<br>{body}</div>")
         self.scroll.verticalScrollBar().setValue(0)
         self.thumb.hide()
-        self.based_text.setText(self.agent.t("recipe_foot", level=p.recipe.level, s=f"{p.seconds:.1f}"))
+        n = len(self.agent.lessons.of(p.recipe.id))
+        applied = (self.agent.t("lessons_applied", n=n) if n == 1 else self.agent.t("lessons_applied_n", n=n)) if n else ""
+        self.based_text.setText(self.agent.t("recipe_foot", level=p.recipe.level, s=f"{p.seconds:.1f}") + applied)
         self.based.show()
+        self.btn_fix.setVisible(len(p.outputs) == 1)
         self.foot.setText(self.agent.t("edit_hint"))
         if not self.expanded:
             self.expand(activate=False)
         self._fit()
+
+    def _start_fix(self) -> None:
+        """The result becomes editable text, one paragraph per line; Enter applies the user's version."""
+        from ..recipes import docs as rdocs
+
+        p = getattr(self, "_result", None)
+        if p is None or not self.agent.awaiting:
+            return
+        self.editor.setPlainText("\n".join(rdocs.shape(p.outputs[0].made).paragraphs))
+        self.scroll.hide()                                  # the editor takes the answer's place
+        self.btn_fix.hide()
+        self.editor.show()
+        self.editor.setFocus()
+        self._fit_editor()
+
+    def _fit_editor(self) -> None:
+        """As tall as its wrapped text, up to 360 px; beyond that it scrolls."""
+        # (a plain-text document measures itself in lines: add up the wrapped blocks in pixels)
+        h, block = 6, self.editor.document().begin()
+        while block.isValid():
+            h += int(self.editor.blockBoundingRect(block).height())
+            block = block.next()
+        self.editor.setFixedHeight(max(80, min(360, h)))
+        self.editor.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if h > 360 else Qt.ScrollBarAlwaysOff)
+        self._fit()
+
+    def _show_lesson(self, les) -> None:
+        """"Aprendí: ..." in small gray with Discard, or a plain line (learning / failed)."""
+        import html as _html
+
+        pal = self.theme.palette
+        if isinstance(les, str):
+            self.foot.setText(_html.escape(les))
+        else:
+            self.foot.setText(f'{_html.escape(self.agent.t("lesson_learned", text=les.text))} &nbsp;'
+                              f'<a href="lesson:{les.id}" style="color:{pal.muted};">{self.agent.t("lesson_discard")}</a>')
+        self._footnote = self.foot.text()
+        self._fit()
+
+    def _lesson_link(self, link: str) -> None:
+        import html as _html
+
+        if link.startswith("lesson:"):
+            les = next((x for x in self.agent.lessons.all() if x.id == link[7:]), None)
+            if les and self.agent.lessons.discard(les.id):
+                self.foot.setText(_html.escape(self.agent.t("lesson_discarded", text=les.text)))
+                self._footnote = self.foot.text()
+                self._fit()
 
     def _show_recipes(self) -> None:
         """The recipe memory, in the answer area: one line each, with Delete."""
@@ -594,15 +670,25 @@ class Edith(QWidget):
             self.answer.setText(_reading_html(self.agent.t("recipes_none")))
         else:
             pal = self.theme.palette
-            lines = [f'{_html.escape(self.agent.t("recipe_line", name=r.name, level=r.level, uses=len(r.runs)))}'
-                     f' &nbsp; <a href="del:{r.id}" style="color:{pal.muted}; text-decoration:none;">'
-                     f'{self.agent.t("recipe_delete")}</a>' for r in recipes]
+            lines = []
+            for r in recipes:
+                lines.append(f'{_html.escape(self.agent.t("recipe_line", name=r.name, level=r.level, uses=len(r.runs)))}'
+                             f' &nbsp; <a href="del:{r.id}" style="color:{pal.muted}; text-decoration:none;">'
+                             f'{self.agent.t("recipe_delete")}</a>')
+                for les in self.agent.lessons.of(r.id):          # its lessons, each deletable
+                    lines.append(f'<span style="color:{pal.muted};">&nbsp;&nbsp;· {_html.escape(les.text)}</span>'
+                                 f' &nbsp; <a href="lesson-del:{les.id}" style="color:{pal.muted}; text-decoration:none;">'
+                                 f'{self.agent.t("recipe_delete")}</a>')
             self.answer.setText('<div style="line-height:150%;">' + "<br>".join(lines) + "</div>")
         self._fit()
 
     def _recipe_link(self, link: str) -> None:
         if link.startswith("del:"):
             self.agent.recipes.delete(link[4:])
+            self.agent.lessons.drop_recipe(link[4:])
+            self._show_recipes()
+        elif link.startswith("lesson-del:"):
+            self.agent.lessons.discard(link[11:])
             self._show_recipes()
 
     def _ago(self, ts: float | None) -> str:
@@ -750,6 +836,13 @@ class Edith(QWidget):
         self._apply_hotkey(DEFAULT_OPEN)
 
     def eventFilter(self, obj, event) -> bool:
+        if obj is getattr(self, "editor", None) and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not event.modifiers() & Qt.ShiftModifier:
+                self.agent.decide(True, self.editor.toPlainText())
+                return True
+            if event.key() == Qt.Key_Escape:
+                self.agent.decide(False)
+                return True
         if obj is self.field and event.type() == QEvent.Resize:
             self.tools.move(self.field.width() - self.tools.width() - 6,
                             (self.field.height() - self.tools.height()) // 2)

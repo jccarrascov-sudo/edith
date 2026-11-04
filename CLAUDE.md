@@ -89,7 +89,8 @@ demo-check 5/5; P2 = simple lessons (preview edit or "corrige:"), detection (d) 
 flag; P3 = escalation to Muse Spark after 2 failures; P4 only if all pass: levels 4-5 + automatic
 detection. Never start a priority before the previous passes; after each: demo-check, commit,
 report; revert what breaks demo-check; unfinished work stays behind an OFF flag and out of the UI.
-Status: stage A done (src/edith/recipes/, scripts/demo_check.py, demo/make_letters.py).
+Status: stage A done (src/edith/recipes/, scripts/demo_check.py, demo/make_letters.py); P2 done
+(recipes/lessons.py: triggers a and b; lessons live in the recipe's program, re-verified; c and d not built).
 
 ## Product (the video revolves around this; no command is typed in the video)
 A minimal desktop assistant with a local memory of the last 10 minutes.

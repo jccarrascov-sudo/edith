@@ -330,6 +330,24 @@ Demo-check (`scripts/demo_check.py`, real Muse Spark, each run from nothing: lea
 attempt, $0.018-0.024 per compile, replay 0.50-0.62 s. Level 2 forced: verified on the 2nd
 attempt (Word COM, ~5 s per run).
 
+### Lessons (priority 2)
+
+When a result is not quite right, correct it once: press **Correct** under the preview and edit
+the text (Enter applies your version at once), or write **"corrige: …"** ("correct: …"). Muse
+Spark changes the recipe's program so the correction holds for every row and it is verified
+again: your corrected document becomes the recipe's proof (that row must give exactly it, two
+more rows must still work); an instruction must change the result and work on three rows, and
+you see the new preview before anything is saved. The panel shows "Learned: …" in small gray
+with **Discard** (the previous program and proof come back). The next run applies the lesson by
+itself, with no model, and the gray line says "· 1 lesson applied". Lessons are listed under
+their recipe in Options -> Recipes, each deletable.
+
+Live (real Muse Spark): a sign-off changed and a line added in the preview -> "Close reminders
+with 'Kind regards,' and add 'Please pay within 5 days.'" (~22 s, in the background); the next
+letter (another client) has both in 0.44 s. "corrige: el monto va con S/ en vez de USD" -> the
+next letter says S/ and keeps the first lesson; Discard -> USD again. Demo-check with lessons:
+5/5 runs, 11 steps each (lesson a 19-22 s, lesson b 16-22 s, next runs 0.44-0.62 s).
+
 ## Demo environment
 
 A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitious invoices
@@ -381,6 +399,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Built during the hackathon (all original code) | Status |
 |---|---|
 | Recipes (stage A): demo finding, compile with Muse Spark at levels 1-2, verification on copies, sandbox (AST whitelist + audit hook), replay with preview/undo, recipe list, Ctrl+Alt+R / Ctrl+Alt+Q, demo-check | done |
+| Lessons (priority 2): correct the preview or "corrige: …" -> the recipe's program changes and is re-verified, "Learned: …" with Discard, applied on the next run | done |
 | Local memory: change-detected capture, mouse-only click log, UIA field values, system audio, 10-min buffer, exclusions | done |
 | `ask` over the last 10 minutes, with token optimizations | done |
 | Learning backwards: demo episode finder, spreadsheet row matcher, Muse Spark block plan + check | done |

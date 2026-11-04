@@ -56,6 +56,14 @@ TEXT = {
         "recipe_line": "{name} · Level {level} · used {uses}×",
         "recipe_delete": "Delete",
         "stopped": "Stopped. Nothing else will run.",
+        "fix_label": "Correct",
+        "lesson_learning": "Learning from your correction…",
+        "lesson_learned": "Learned: {text}",
+        "lesson_discard": "Discard",
+        "lesson_discarded": "Forgotten: {text}",
+        "lesson_failed": "I saved your version, but couldn't turn it into a rule for the next ones.",
+        "correct_nothing": "There is no recent result to correct. Ask me for a task first.",
+        "lessons_applied": " · {n} lesson applied", "lessons_applied_n": " · {n} lessons applied",
         "no_demo": "I can repeat a form you filled from a spreadsheet, and I don't see one in the last {minutes} "
                    "minutes. Fill one by hand, then ask me again. For anything else, I can tell you what you did, "
                    "but I can't repeat it yet.",
@@ -198,6 +206,14 @@ TEXT = {
         "recipe_line": "{name} · Nivel {level} · usada {uses}×",
         "recipe_delete": "Borrar",
         "stopped": "Detenido. No se ejecutará nada más.",
+        "fix_label": "Corregir",
+        "lesson_learning": "Aprendiendo de tu corrección…",
+        "lesson_learned": "Aprendí: {text}",
+        "lesson_discard": "Descartar",
+        "lesson_discarded": "Olvidé: {text}",
+        "lesson_failed": "Guardé tu versión, pero no pude convertirla en una regla para las siguientes.",
+        "correct_nothing": "No tengo un resultado reciente que corregir. Pídeme una tarea primero.",
+        "lessons_applied": " · {n} lección aplicada", "lessons_applied_n": " · {n} lecciones aplicadas",
         "no_demo": "Puedo repetir un formulario que llenaste desde una hoja de cálculo, y no veo ninguno en los "
                    "últimos {minutes} minutos. Llena uno a mano y vuelve a pedírmelo. Otras acciones te las puedo "
                    "describir, pero todavía no repetir.",
@@ -392,6 +408,7 @@ class Agent(QObject):
     outline = Signal(object)  # presentation mode: the screen rectangle Edith acts on, or None
     undoable = Signal(bool)   # an applied edit can be undone
     result_preview = Signal(object)  # a recipe's result to confirm (recipes.run.Preview), or None
+    lesson = Signal(object)          # a lesson just learned (recipes.lessons.Lesson), or a str line
     _ui = Signal(object)      # run a function on the UI thread (clipboard, keys)
     reply = Signal(str)       # the answer under the text field (repeated while it streams)
     footnote = Signal(str)    # gray line under the answer: what was sent, or "Answered locally"
@@ -417,6 +434,11 @@ class Agent(QObject):
 
         self.recipes = RecipeStore(cfg)
         self.recipe_runner = Runner(self.recipes)
+        from ..recipes.lessons import LessonStore
+
+        self.lessons = LessonStore(self.recipes)
+        self._edited: str | None = None         # the user's version of a recipe's result
+        self._last_run = None                   # (recipe id, key, file made) for "corrige: ..."
         self._last_undo = "edit"               # what Undo undoes: Edith's last edit or recipe run
         self._stopped = False
         self._ui.connect(lambda job: job())
@@ -433,7 +455,10 @@ class Agent(QObject):
 
         from ..recipes.run import LEARN
 
-        target = (self._learn if LEARN.search(request) else self._cant if BARE_ORDER.match(request)
+        from ..recipes.lessons import CORRECT
+
+        target = (self._learn if LEARN.search(request) else self._correct if CORRECT.match(request)
+                  else self._cant if BARE_ORDER.match(request)
                   else self._task if is_task(request)
                   else self._undo if UNDO.search(request)
                   else self._edit if is_edit(request) else self._ask)
@@ -443,9 +468,12 @@ class Agent(QObject):
         self._set_busy(True)
         threading.Thread(target=self._guarded, args=(target, request), daemon=True).start()
 
-    def decide(self, confirmed: bool) -> None:
+    def decide(self, confirmed: bool, edited: str | None = None) -> None:
+        """Enter (True) or Esc (False) on what waits; `edited` = the user's version of a recipe's
+        result, corrected in the preview (it is applied, and Edith learns from it)."""
         if self.awaiting:
             self._confirmed = confirmed
+            self._edited = edited if confirmed else None
             self._decision.set()
 
     # --- worker ---------------------------------------------------------------------------------
@@ -504,7 +532,39 @@ class Agent(QObject):
         self.reply.emit(self.t("learn_done", name=r.name, column=r.key_column))
         self.footnote.emit(self.t("learn_foot", level=r.level))
 
-    def _recipe(self, m) -> None:
+    def _correct(self, request: str) -> None:
+        """"corrige: el monto va con S/": change the last recipe for good, then show it again."""
+        from ..recipes import lessons
+        from ..recipes.run import Match
+
+        m = lessons.CORRECT.match(request)
+        r = next((x for x in self.recipes.all() if self._last_run and x.id == self._last_run[0]), None)
+        if r is None or not Path(self._last_run[2]).exists():
+            self.reply.emit(self.t("correct_nothing"))
+            return
+        self.status.emit(self.t("lesson_learning"))
+        les = lessons.learn(self.cfg, self.recipes, r, self._last_run[1], Path(self._last_run[2]),
+                            instruction=m.group("what").strip())
+        if les is None:
+            self.reply.emit(self.t("lesson_failed"))
+            return
+        self.lesson.emit(les)
+        r = next(x for x in self.recipes.all() if x.id == r.id)
+        self._recipe(Match(r, [self._last_run[1]]), keep_lesson=True)
+
+    def _learn_lesson(self, r, key: str, made: Path, corrected: Path) -> None:
+        """In the background, after the user's corrected version was saved."""
+        from ..recipes import lessons
+
+        self.lesson.emit(self.t("lesson_learning"))
+        try:
+            les = lessons.learn(self.cfg, self.recipes, r, key, made, corrected=corrected)
+        except Exception:
+            log.exception("learning a lesson failed")
+            les = None
+        self.lesson.emit(les if les is not None else self.t("lesson_failed"))
+
+    def _recipe(self, m, keep_lesson: bool = False) -> None:
         import os
 
         self._stopped = False
@@ -527,7 +587,19 @@ class Agent(QObject):
         if not self._confirmed:
             self.reply.emit(self.t("recipe_discarded"))
             return
+        edited, corrected, made = self._edited, None, p.outputs[0].made
+        self._edited = None
+        if edited is not None and len(p.outputs) == 1:
+            from ..recipes import docs as rdocs, lessons
+
+            if [rdocs.squash(x) for x in edited.splitlines() if rdocs.squash(x)] != rdocs.shape(made).paragraphs:
+                corrected = lessons.apply_edit(made, edited, made.parent / "corrected" / made.name)
+                p.outputs[0].made = corrected
         self.recipe_runner.apply(p)
+        self._last_run = (p.recipe.id, p.outputs[-1].key, str(p.outputs[-1].made))
+        if corrected is not None:
+            threading.Thread(target=self._learn_lesson, args=(p.recipe, p.outputs[0].key, made, corrected),
+                             daemon=True).start()
         self._last_undo = "recipe"
         self.undoable.emit(True)
         n = len(p.outputs)

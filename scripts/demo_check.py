@@ -11,6 +11,13 @@ made by hand; a new Edith home) and goes through the same Agent the panel uses:
   4. undo        Undo -> the letter is gone, the user's own letter untouched
   5. ambiguous   "hazlo para Lazy Comet" -> asks which one, runs nothing
   6. several     "para Ñandú y Acuña" -> 2 letters in < 3 s, Esc -> nothing saved
+  7. lesson-a    "para Librería Acuña", corrected in the preview (sign-off + a new line), Enter ->
+                 the corrected letter is saved and a lesson is learned
+  8. applied-a   "para Taller Ñuñoa" -> the lesson is already in the preview (no model), Esc
+  9. lesson-b    "corrige: el monto va con S/ en vez de USD" -> a lesson, the new preview of the
+                 last letter shows S/ and keeps lesson a; Enter
+ 10. applied-b   "para Café Señorial" -> S/ and lesson a, < 3 s, Esc
+ 11. discard     Discard lesson b -> the next preview says USD again and keeps lesson a
 The real Muse Spark API is used for compiling (cost printed); running a recipe calls no model.
 Exit code 0 only if every step of every run is OK.
 """
@@ -59,6 +66,8 @@ class Driver:
         self.feet: list[str] = []
         self.preview = None
         self.got_preview = threading.Event()
+        self.lessons: list = []
+        agent.lesson.connect(lambda x: self.lessons.append(x))
         agent.reply.connect(self.replies.append)
         agent.footnote.connect(self.feet.append)
         agent.result_preview.connect(self._preview)
@@ -68,7 +77,7 @@ class Driver:
             self.preview = p
             self.got_preview.set()
 
-    def do(self, request: str, decide: bool | None = None, timeout: float = 300) -> float:
+    def do(self, request: str, decide: bool | None = None, timeout: float = 300, edit=None) -> float:
         """Submit and wait until the agent is free again; Enter/Esc on a preview. Seconds."""
         self.replies.clear()
         self.preview = None
@@ -80,7 +89,7 @@ class Driver:
             pump()
             if self.got_preview.is_set() and decide is not None and self.agent.awaiting:
                 self.got_preview.clear()
-                self.agent.decide(decide)
+                self.agent.decide(decide, edit(self.preview) if edit and decide else None)
             time.sleep(0.02)
         pump()
         return time.monotonic() - t0
@@ -157,11 +166,78 @@ def one_run(user: Path) -> list[tuple[str, bool, str]]:
               and not (user / "Payment reminder - Librería Acuña.docx").exists())
         out.append(("several", ok, f"{len(p.outputs) if p else 0} letters, {p.seconds if p else 0:.2f} s, Esc -> "
                     f"{(d.replies or [''])[-1][:40]}"))
+        lessons_steps(a, d, user, out)
     except Exception as exc:
         out.append(("error", False, f"{type(exc).__name__}: {exc}"[:200]))
     finally:
         learn.find_demo = real_find
     return out
+
+
+def lessons_steps(a, d, user: Path, out: list) -> None:
+    from edith.recipes import docs
+    from edith.recipes.lessons import Lesson
+
+    def paragraphs(p):
+        return docs.shape(p.outputs[0].made).paragraphs
+
+    def corrected(p):
+        return "\n".join(paragraphs(p)).replace("Best regards,", "Kind regards,") + "\nPlease pay within 5 days."
+
+    def wait_lesson(n_before: int, timeout: float = 240):
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            pump()
+            got = [x for x in d.lessons[n_before:] if isinstance(x, Lesson)]
+            if got:
+                return got[-1]
+            if any(isinstance(x, str) and x == a.t("lesson_failed") for x in d.lessons[n_before:]):
+                return None
+            time.sleep(0.05)
+        return None
+
+    # 7. lesson (a): correct the preview
+    n0 = len(d.lessons)
+    d.do("haz lo mismo para Librería Acuña", decide=True, edit=corrected)
+    saved = user / "Payment reminder - Librería Acuña.docx"
+    t0 = time.monotonic()
+    les = wait_lesson(n0)
+    text = docs.shape(saved).paragraphs if saved.exists() else []
+    ok = les is not None and "Kind regards," in text and "Please pay within 5 days." in text
+    out.append(("lesson-a", ok, f"{time.monotonic() - t0:.1f} s · Aprendí: {les.text if les else '-'}"[:110]))
+    if not ok:
+        return
+    # 8. applied on the next run, with no model
+    d.do("para Taller Ñuñoa", decide=False)
+    p = d.preview
+    txt = paragraphs(p) if p else []
+    ok = p is not None and "Kind regards," in txt and "Please pay within 5 days." in txt and p.seconds < 3
+    out.append(("applied-a", ok, f"{p.seconds if p else 0:.2f} s · " + " / ".join(txt[-3:])))
+    # 9. lesson (b): "corrige: ..."
+    n0 = len(d.lessons)
+    t0 = time.monotonic()
+    d.do("corrige: el monto va con S/ en vez de USD", decide=True)
+    les_b = next((x for x in d.lessons[n0:] if isinstance(x, Lesson)), None)
+    p = d.preview
+    txt = paragraphs(p) if p else []
+    ok = (les_b is not None and p is not None and any("S/ " in x for x in txt) and not any("USD" in x for x in txt)
+          and "Kind regards," in txt)
+    out.append(("lesson-b", ok, f"{time.monotonic() - t0:.1f} s · Aprendí: {les_b.text if les_b else '-'}"[:110]))
+    if not ok:
+        return
+    # 10. applied on the next run
+    d.do("para Café Señorial", decide=False)
+    p = d.preview
+    txt = paragraphs(p) if p else []
+    ok = p is not None and any("S/ " in x for x in txt) and "Kind regards," in txt and p.seconds < 3
+    out.append(("applied-b", ok, f"{p.seconds if p else 0:.2f} s · " + next((x for x in txt if "S/" in x), "")[:60]))
+    # 11. discard lesson b
+    a.lessons.discard(les_b.id)
+    d.do("para Café Señorial", decide=False)
+    p = d.preview
+    txt = paragraphs(p) if p else []
+    ok = p is not None and any("USD " in x for x in txt) and "Kind regards," in txt
+    out.append(("discard", ok, next((x for x in txt if "USD" in x or "S/" in x), "")[:70]))
 
 
 def pump() -> None:

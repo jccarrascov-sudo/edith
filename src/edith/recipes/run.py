@@ -137,7 +137,11 @@ class Runner:
 
     def prepare(self, m: Match) -> Preview:
         """Run the recipe (and its proof) into a run folder: nothing of the user's is touched."""
+        from .lessons import lock
+
         r = m.recipe
+        with lock(r.id):                     # a lesson being learned finishes first
+            pass
         program = self.store.program(r)
         t0 = time.monotonic()
         work = self.store.dir / r.id / "runs" / time.strftime("%Y%m%d-%H%M%S")

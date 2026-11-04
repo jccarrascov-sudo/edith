@@ -1,0 +1,6 @@
+way,correct,seconds_total,seconds_per_invoice,cost_usd,cost_per_invoice,note,first_wrong
+(a) click-by-click agent (free mode),2/30,1657.0,55.23,0.3164,0.01055,Muse Spark picks every action,"Velvet Cactus Supplies: Date: '2026-10-08'≠'08/10/2026', Amount: '2697'≠'2697.00'; Lazy Comet Coffee Bar: Date: '2026-10-07'≠'07/10/2026'; Golden Spoon Supplies: Date: '2026-10-16'≠'16/10/2026', Amount: '3017.3'≠'3017.30'"
+(b) program from a text description,1/30,491.5,16.38,0.0214,0.00071,no demonstration,"Paper Moth Bakery: Amount: '4,216.96'≠'4216.96'; Velvet Cactus Supplies: not saved; Lazy Comet Coffee Bar: not saved"
+(c) level-4 recipe from one demonstration,30/30,488.6,16.29,0.0,0.0,"compiled once: 105 s, $0.0276",
+(d) level-5 recipe (SAM 3.1 points),30/30,29.8,0.99,0.0,0.0,"compiled once: 56 s, $0.0285",
+(e) after the app changed (v2) + repair,30/30,28.9,0.96,0.0612,0.00204,repaired by escalation at level 5; repair 158 s,

@@ -1,8 +1,11 @@
 """Lessons: one-line preferences and corrections, learned when the user corrects a result.
 
-Created (priority 2, the simple version) only when the user
-  (a) edits the result in the preview (the edited text is applied at once), or
-  (b) writes "corrige: ..." / "correct: ...".
+Created when the user
+  (a) edits the result in the preview (the edited text is applied at once),
+  (b) writes "corrige: ..." / "correct: ...",
+  (c) edits a document Edith applied, in the minutes after (`watch_applied`), or
+  (d) discards a preview and then makes that document their own way (`watch_rejected`; off by
+      default: `[lessons] after_reject`).
 Muse Spark then changes the recipe's program so the correction holds for every row, and the
 program is verified again: with (a) the corrected document is the new proof (the row must give
 exactly it, two more rows must still work); with (b) the program must change the result and still
@@ -130,6 +133,70 @@ def apply_edit(src: str | Path, edited: str, out: str | Path) -> Path:
     return out
 
 
+# --- (c) and (d): what the user does after Edith ----------------------------------------------------
+
+def _differs(a: Path, b: Path) -> bool:
+    try:
+        return bool(docs.compare(a, b, check_name=False))
+    except Exception:                       # being written: not now
+        return False
+
+
+def watch_applied(final: Path, made: Path, minutes: float, stop: threading.Event | None = None,
+                  poll_s: float = 5.0) -> Path | None:
+    """(c) The document Edith applied, if the user edits and saves it within `minutes`: a copy of
+    their version (the file may keep changing), else None."""
+    end = time.monotonic() + minutes * 60
+    try:
+        seen = final.stat().st_mtime
+    except OSError:
+        return None
+    while time.monotonic() < end and not (stop and stop.is_set()):
+        time.sleep(poll_s)
+        try:
+            mtime = final.stat().st_mtime
+        except OSError:
+            return None                      # deleted or undone: nothing to learn
+        if mtime != seen:
+            seen = mtime
+            time.sleep(min(poll_s, 1.0))     # let the save finish
+            if _differs(made, final):
+                copy_ = made.parent / "user-edit" / final.name
+                copy_.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(final, copy_)
+                return copy_
+    return None
+
+
+def watch_rejected(folder: Path, key: str, template: Path, since: float, minutes: float,
+                   stop: threading.Event | None = None, poll_s: float = 5.0) -> Path | None:
+    """(d) After a discarded preview for `key`: a Word document the user saves in `folder` within
+    `minutes` that names that row and comes from the same template. A copy of it, else None."""
+    end = time.monotonic() + minutes * 60
+    tpl = docs.shape(template).text()
+    fk = docs.fold(docs.squash(key))
+    checked: dict[Path, float] = {}
+    while time.monotonic() < end and not (stop and stop.is_set()):
+        time.sleep(poll_s)
+        for f in folder.glob("*.docx"):
+            try:
+                mtime = f.stat().st_mtime
+            except OSError:
+                continue
+            if f.name.startswith("~$") or mtime < since or checked.get(f) == mtime or f == template:
+                continue
+            checked[f] = mtime
+            try:
+                text = docs.shape(f).text()
+            except Exception:
+                continue
+            if fk in docs.fold(text) and docs.similarity(tpl, text) >= 0.35:
+                copy_ = Path(tempfile.mkdtemp(prefix="edith-own-way-")) / f.name
+                shutil.copy2(f, copy_)
+                return copy_
+    return None
+
+
 # --- the lesson memory ---------------------------------------------------------------------------
 
 @dataclass
@@ -202,7 +269,8 @@ def save_version(store: RecipeStore, r: Recipe) -> int:
     dst = vdir / f"v{n}"
     dst.mkdir(parents=True)
     shutil.copy2(store.dir / r.id / "program.py", dst / "program.py")
-    shutil.copytree(store.proof(r), dst / "proof")
+    if store.proof(r).exists():                       # (form recipes keep their proof in the recipe)
+        shutil.copytree(store.proof(r), dst / "proof")
     (dst / "fields.json").write_text(json.dumps({"demo_key": r.demo_key, "result": r.result}, ensure_ascii=False),
                                      encoding="utf-8")
     return n
@@ -213,8 +281,9 @@ def restore_version(store: RecipeStore, r: Recipe, n: int) -> None:
     if not src.exists():
         return
     shutil.copy2(src / "program.py", store.dir / r.id / "program.py")
-    shutil.rmtree(store.proof(r), ignore_errors=True)
-    shutil.copytree(src / "proof", store.proof(r))
+    if (src / "proof").exists():
+        shutil.rmtree(store.proof(r), ignore_errors=True)
+        shutil.copytree(src / "proof", store.proof(r))
     fields = json.loads((src / "fields.json").read_text(encoding="utf-8"))
     r.demo_key, r.result = fields["demo_key"], fields["result"]
     store.save(r)
@@ -287,7 +356,7 @@ def _check(program: str, r: Recipe, key: str, expected: Path | None, before: Pat
 
 
 def learn(cfg, store: RecipeStore, r: Recipe, key: str, made: Path, *, corrected: Path | None = None,
-          instruction: str = "", ask: Callable[[str, str], str] | None = None) -> Lesson | None:
+          instruction: str = "", ask: Callable[[str, str], str] | None = None, source: str = "") -> Lesson | None:
     """Change the recipe's program for a correction; on success save the lesson and return it.
     `made` = what the program made for `key`; `corrected` = the user's edit of it (a), or
     `instruction` = what "corrige: ..." asked (b)."""
@@ -327,7 +396,7 @@ def learn(cfg, store: RecipeStore, r: Recipe, key: str, made: Path, *, corrected
                     r.demo_key, r.result = key, str(proof / new_result.name)
                     store.save(r)
                     lesson = Lesson(id=f"l{int(time.time() * 1000)}", text=text or instruction or "—", recipe_id=r.id,
-                                    app="Word", source="preview_edit" if corrected is not None else "instruction",
+                                    app="Word", source=source or ("preview_edit" if corrected is not None else "instruction"),
                                     version=version, ts=time.time())
                     LessonStore(store).add(lesson)
                     return lesson

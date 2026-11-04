@@ -26,10 +26,13 @@ log = logging.getLogger(__name__)
 
 PURE = {"datetime", "re", "copy", "decimal", "math", "string", "unicodedata", "collections", "itertools",
         "pathlib", "calendar", "locale", "textwrap", "functools", "operator"}
-LIBS = {1: {"openpyxl", "docx", "csv"}, 2: {"openpyxl", "docx", "csv"}}
+LIBS = {0: {"openpyxl", "docx", "csv"}, 1: {"openpyxl", "docx", "csv"}, 2: {"openpyxl", "docx", "csv"}, 4: {"openpyxl", "csv"},
+        5: {"openpyxl", "csv"}}
 FORBIDDEN = {"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "breakpoint", "input",
              "setattr", "delattr", "memoryview", "help", "exit", "quit"}
-SIGNATURE = {1: ["sheet", "template", "key", "out_dir"], 2: ["sheet", "template", "key", "out_dir", "word"]}
+SIGNATURE = {1: ["sheet", "template", "key", "out_dir"], 2: ["sheet", "template", "key", "out_dir", "word"],
+             4: ["sheet", "template", "key", "out_dir", "ui"], 5: ["sheet", "template", "key", "out_dir", "ui"],
+             0: ["files", "out_dir"]}                      # 0 = free mode on files (level-1 libraries)
 TIMEOUT = {1: 30, 2: 30, 3: 30, 4: 180, 5: 180}
 
 
@@ -65,8 +68,8 @@ def check(source: str, level: int) -> None:
             raise UnsafeProgram(f"{type(node).__name__} is not allowed (line {node.lineno})")
         elif isinstance(node, ast.Name) and (node.id in FORBIDDEN or node.id.startswith("__")):
             raise UnsafeProgram(f"{node.id} is not allowed (line {node.lineno})")
-        elif isinstance(node, ast.Attribute) and node.attr.startswith("__"):
-            raise UnsafeProgram(f"{node.attr} is not allowed (line {node.lineno})")
+        elif isinstance(node, ast.Attribute) and node.attr.startswith("__" if level < 4 else "_"):
+            raise UnsafeProgram(f"{node.attr} is not allowed (line {node.lineno})")   # (ui's insides too)
         elif isinstance(node, ast.Attribute) and node.attr in ("unlink", "rmdir", "chmod", "symlink_to",
                                                                "hardlink_to", "rmtree"):
             # (rename/replace are also string methods; the audit hook confines renames to the run folder)
@@ -76,7 +79,7 @@ def check(source: str, level: int) -> None:
 # The child process: imports first, then the audit hook, then the program.
 BOOT = r'''
 import json, os, sys
-job = json.loads(sys.stdin.read())
+job = json.loads(open(sys.argv[1], encoding="utf-8").read()) if len(sys.argv) > 1 else json.loads(sys.stdin.read())
 import openpyxl, docx, csv, datetime, re, copy, decimal, math, string, unicodedata, collections, itertools, pathlib
 import calendar, locale, textwrap, functools, operator
 import docx.oxml, docx.shared, docx.enum.text, openpyxl.styles, openpyxl.utils
@@ -87,9 +90,13 @@ if job["level"] == 2:
     word = win32com.client.DispatchEx("Word.Application")
     word.Visible = False
     word.DisplayAlerts = 0
+if job["level"] >= 4:
+    from edith.recipes.uihelp import make
+    word = make(job["level"], job["pid"], job.get("dry"), job.get("points"))   # the program's only way to the app (ui)
 def norm(p):
     return os.path.normcase(os.path.abspath(p))
 WRITE = [norm(p) for p in job["write"]]
+RESULT = norm(job["result"]) if job.get("result") else None
 READ = [norm(p) for p in job["read"]] + WRITE + [norm(p) for p in {sys.prefix, sys.base_prefix, sys.exec_prefix}]
 def inside(p, roots):
     p = norm(p)
@@ -103,7 +110,7 @@ def hook(event, args):
         if isinstance(path, int):
             return
         writes = any(c in str(mode) for c in "wax+")
-        if writes and not inside(path, WRITE):
+        if writes and not inside(path, WRITE) and norm(path) != RESULT:
             raise PermissionError(f"Edith: writing outside the run folder is not allowed: {path}")
         if not writes and not inside(path, READ):
             raise PermissionError(f"Edith: reading outside the recipe's folders is not allowed: {path}")
@@ -111,14 +118,22 @@ def hook(event, args):
         paths = [a for a in args if isinstance(a, (str, bytes, os.PathLike))]
         if not all(inside(p, WRITE) for p in paths):
             raise PermissionError(f"Edith: {event} outside the run folder is not allowed")
+    elif job["level"] >= 4 and event.startswith(("ctypes.", "winreg.")):
+        return                                          # UI Automation (comtypes) needs them; the program cannot import them
     elif event.startswith(BLOCK) or event == "import" and args[0].split(".")[0] in ("subprocess", "socket", "ctypes", "winreg"):
         raise PermissionError(f"Edith: {event} is not allowed in a recipe")
 sys.addaudithook(hook)
 ns = {}
 try:
     exec(compile(job["source"], "recipe", "exec"), ns)
-    args = [job["args"][k] for k in ("sheet", "template", "key", "out_dir")]
-    out = ns["run"](*args, word) if job["level"] == 2 else ns["run"](*args)
+    args = ([job["args"]["files"], job["args"]["out_dir"]] if job["level"] == 0
+            else [job["args"][k] for k in ("sheet", "template", "key", "out_dir")])
+    try:
+        out = ns["run"](*args, word) if job["level"] in (2, 4, 5) else ns["run"](*args)
+    except BaseException as exc:
+        if type(exc).__name__ != "Submitted":
+            raise
+        out = job["dry"]["out"]                         # a dry run stopped at the submit button
     result = {"ok": True, "out": str(out) if out is not None else None}
 except BaseException as exc:
     import traceback
@@ -126,14 +141,17 @@ except BaseException as exc:
     line = next((f.lineno for f in reversed(tb) if f.filename == "recipe"), None)
     result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:600], "line": line}
 finally:
-    if word is not None:
+    if word is not None and job["level"] == 2:
         try:
             for d in list(word.Documents):
                 d.Close(0)
             word.Quit()
         except Exception:
             pass
-sys.stdout.write("\n@@EDITH@@" + json.dumps(result))
+if RESULT:
+    open(RESULT, "w", encoding="utf-8").write(json.dumps(result))
+else:
+    sys.stdout.write("\n@@EDITH@@" + json.dumps(result))
 '''
 
 
@@ -162,11 +180,100 @@ def stop_all() -> int:
     return len(procs)
 
 
+class _Hidden:
+    """A process on the hidden desktop, for stop_all()."""
+
+    def __init__(self, p):
+        self.p = p
+
+    def kill(self):
+        self.p.kill()
+
+
+def _run_hidden(source, level, sheet, template, key, out_dir, read, pid, dry=None, points=None) -> Outcome:
+    import tempfile
+    import time
+
+    from . import desktop
+
+    t0 = time.monotonic()
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    jobdir = Path(tempfile.mkdtemp(prefix="edith-job-"))
+    (jobdir / "boot.py").write_text(BOOT, encoding="utf-8")
+    result = jobdir / "result.json"
+    if dry is not None:
+        dry = {"submit": dry, "out": str(out / "submitted.json")}
+    job = {"source": source, "level": level, "pid": pid, "result": str(result), "dry": dry, "points": points,
+           "args": {"sheet": sheet, "template": template, "key": key, "out_dir": str(out)},
+           "write": [str(out)], "read": [str(Path(sheet).parent)] + read}
+    (jobdir / "job.json").write_text(json.dumps(job), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("MODEL_", "META_"))}
+    p = desktop.start(f'"{sys.executable}" -I "{jobdir / "boot.py"}" "{jobdir / "job.json"}"', cwd=str(out), env=env)
+    h = _Hidden(p)
+    with _lock:
+        _running.add(h)
+    try:
+        code = p.wait(TIMEOUT[level])
+        if code is None:
+            p.kill()
+            return Outcome(False, error=f"timeout after {TIMEOUT[level]} s", seconds=time.monotonic() - t0)
+    finally:
+        with _lock:
+            _running.discard(h)
+    seconds = time.monotonic() - t0
+    if not result.exists():
+        return Outcome(False, error="stopped" if code in (1,) else f"exit code {code}", seconds=seconds)
+    res = json.loads(result.read_text(encoding="utf-8"))
+    if not res["ok"]:
+        return Outcome(False, error=res["error"], line=res.get("line"), seconds=seconds)
+    return Outcome(True, out=res.get("out"), seconds=seconds)
+
+
+def run_free(source: str, files: dict[str, str], out_dir: str) -> Outcome:
+    """A free-mode program on copies: run(files, out_dir); it may create several files."""
+    import time
+
+    check(source, 0)
+    t0 = time.monotonic()
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    folders = sorted({str(Path(p).parent) for p in files.values()})
+    job = {"source": source, "level": 0, "args": {"files": files, "out_dir": str(out)},
+           "write": [str(out)], "read": folders}
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("MODEL_", "META_"))}
+    proc = subprocess.Popen([sys.executable, "-I", "-c", BOOT], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, cwd=str(out), env=env, creationflags=flags,
+                            encoding="utf-8", errors="replace")
+    with _lock:
+        _running.add(proc)
+    try:
+        stdout, stderr = proc.communicate(json.dumps(job), timeout=TIMEOUT[1])
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.communicate()
+        return Outcome(False, error=f"timeout after {TIMEOUT[1]} s", seconds=time.monotonic() - t0)
+    finally:
+        with _lock:
+            _running.discard(proc)
+    if "@@EDITH@@" not in (stdout or ""):
+        return Outcome(False, error=(stderr or "").strip()[-400:] or f"exit code {proc.returncode}",
+                       seconds=time.monotonic() - t0)
+    res = json.loads(stdout.rsplit("@@EDITH@@", 1)[1])
+    if not res["ok"]:
+        return Outcome(False, error=res["error"], line=res.get("line"), seconds=time.monotonic() - t0)
+    return Outcome(True, out=str(out), seconds=time.monotonic() - t0)
+
+
 def run(source: str, level: int, sheet: str, template: str, key: str, out_dir: str,
-        read: list[str] | None = None) -> Outcome:
+        read: list[str] | None = None, pid: int | None = None, dry: str | None = None,
+        points: dict | None = None) -> Outcome:
     import time
 
     check(source, level)
+    if level >= 4:
+        return _run_hidden(source, level, sheet, template, key, out_dir, read or [], pid, dry, points)
     t0 = time.monotonic()
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)

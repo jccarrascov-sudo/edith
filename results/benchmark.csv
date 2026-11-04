@@ -1,0 +1,16 @@
+metric,value,notes
+key moments: filter precision,94%,30 lines labelled by hand
+key moments: filter recall,100%,no model
+20 screenshots Q&A: accuracy,100%,"Muse Spark, visual questions"
+20 screenshots Q&A: avg time,4.6 s,
+20 screenshots Q&A: cost,$0.0551,total
+10 edit-from-memory scenarios: correct,100%,
+10 edit-from-memory scenarios: time to preview,5.4 s avg,
+local Muse Glimmer 30B (2-bit): time to first token,40.88 s,avg of 3
+local Muse Glimmer 30B (2-bit): total time,63.26 s,avg of 3
+cloud Muse Spark: time to first token,1.87 s,avg of 3
+cloud Muse Spark: total time,2.21 s,avg of 3
+local: VRAM avg / peak,0 / 0 MiB,over the GPU's idle use
+local: RAM avg / peak (llama-server),0 / 0 MiB,
+local: GPU use avg / peak,0 / 0 %,while answering
+local: load time,0.0 s,start to ready

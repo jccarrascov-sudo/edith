@@ -70,6 +70,21 @@ context = 8192
 port = 0                  # 0 = a free port each time
 timeout_s = 120
 
+[free]
+# Requests with no recipe are tried as an agent (25 steps, 3 minutes, always a preview first).
+enabled = true
+
+[free.apps]
+# Desktop apps free mode may drive on the hidden desktop: window title = command line.
+"Northwind Desktop - New invoice" = 'powershell -NoProfile -ExecutionPolicy Bypass -File "demo\desktop\northwind.ps1" -Store "demo\data\northwind.jsonl"'
+
+[lessons]
+# A lesson is also learned when the user, in the minutes after Edith applied a result, edits that
+# document (c); and when they discard a preview and then make that document themselves (d).
+after_apply = true
+after_reject = false      # off by default (priority rules, Nov 3); tested
+watch_minutes = 10
+
 [companion]
 # Edith remembers the conversation and the person (all on this PC; "Delete everything" clears it).
 history_turns = 6         # the last exchanges that go with each request...

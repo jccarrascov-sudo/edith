@@ -164,6 +164,7 @@ class Edith(QWidget):
         agent.preview.connect(self._show_preview)
         agent.result_preview.connect(self._show_result_preview)
         agent.lesson.connect(self._show_lesson)
+        agent.suggestion.connect(self._show_suggestion)
         agent.undoable.connect(self._show_undo)
         if hotkeys:
             hotkeys.pressed.connect(self._hotkey)
@@ -175,6 +176,7 @@ class Edith(QWidget):
             hotkeys.set("stop", DEFAULT_STOP)
         self._label_hotkey()
         self._label_local()
+        self._label_suggest()
         self._label_presentation()
         self._restyle()
         self._collapse_now()
@@ -284,6 +286,7 @@ class Edith(QWidget):
         self.btn_memory = self._text_button("", self._toggle_memory)
         self.btn_quit = self._text_button("Salir" if es else "Quit", self.actions.quit)
         self.btn_recipes = self._text_button(self.agent.t("recipes_label"), self._show_recipes)
+        self.btn_suggest = self._text_button("", self._toggle_suggest)
         self.btn_hotkey = self._text_button("", self._start_capture)
         self.btn_default = self._text_button(self.agent.t("hotkey_default"), self._restore_default)
         self.btn_default.hide()   # only while a new shortcut is being captured
@@ -292,9 +295,10 @@ class Edith(QWidget):
         self.btn_delete = self._text_button(self.agent.t("delete_all"), self._delete_everything)
         self.btn_delete.setVisible(self.actions.delete_everything is not None)
         self._delete_armed = False
-        self.text_buttons = (self.btn_fix, self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_quit, self.btn_hotkey,
+        self.text_buttons = (self.btn_fix, self.btn_suggest, self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_quit, self.btn_hotkey,
                              self.btn_default, self.btn_local, self.btn_presentation, self.btn_delete)
-        groups = ((self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_local, self.btn_presentation),
+        groups = ((self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_local, self.btn_presentation,
+                   self.btn_suggest),
                   ((self.btn_hotkey, self.btn_default),),
                   (self.btn_delete, self.btn_quit))
         for n, group in enumerate(groups):
@@ -439,6 +443,8 @@ class Edith(QWidget):
         self.content.show()
         self.hover_fx.setOpacity(0.0)
         self._load_moments()
+        if self.state.get("suggest_recipes", True) and not self.agent.busy:
+            self.agent.check_suggestion()
         self._fit()
         self._fade()
         self.raise_()
@@ -516,7 +522,8 @@ class Edith(QWidget):
             self.scroll.setFixedHeight(min(ANSWER_MAX_H, self.answer.heightForWidth(inner - 10) + 14))
         self.status.setVisible(bool(self.status.text()))
         self.foot.setVisible(has_answer and bool(self.foot.text()))
-        self.moments.setVisible(not has_answer and not self.agent.busy and bool(self._moments))
+        self.moments.setVisible(not has_answer and not self.agent.busy
+                                and bool(self._moments or getattr(self, "_suggestion", None)))
         lay = self.content.layout()
         self.body.layout().invalidate()            # sizes cached before a widget was shown or hidden
         lay.invalidate()
@@ -607,7 +614,7 @@ class Edith(QWidget):
         applied = (self.agent.t("lessons_applied", n=n) if n == 1 else self.agent.t("lessons_applied_n", n=n)) if n else ""
         self.based_text.setText(self.agent.t("recipe_foot", level=p.recipe.level, s=f"{p.seconds:.1f}") + applied)
         self.based.show()
-        self.btn_fix.setVisible(len(p.outputs) == 1)
+        self.btn_fix.setVisible(len(p.outputs) == 1 and p.recipe.kind == "excel_to_word")
         self.foot.setText(self.agent.t("edit_hint"))
         if not self.expanded:
             self.expand(activate=False)
@@ -756,6 +763,14 @@ class Edith(QWidget):
         width = (PANEL_W - 2 * PAD - 2 * TEXT_INSET - metrics.horizontalAdvance("00:00")
                  - 3 * metrics.horizontalAdvance(" ") - 6)
         rows = []
+        s = getattr(self, "_suggestion", None)
+        if s is not None:                      # a task done twice: one quiet line, never a pop-up
+            line = metrics.elidedText(self.agent.t("suggest_line", name=s.name), Qt.ElideRight, width)
+            rows.append(f'<tr><td style="padding:3px 0; color:{pal.text};">{escape(line)}</td>'
+                        f'<td align="right" style="padding:3px 0;">'
+                        f'<a href="sug:yes" style="color:{pal.accent_text}; text-decoration:none;">{self.agent.t("suggest_yes")}</a>'
+                        f' &nbsp;<a href="sug:no" style="color:{pal.muted}; text-decoration:none;">{self.agent.t("suggest_no")}</a>'
+                        f'</td></tr>')
         for i, m in enumerate(self._moments):
             when = datetime.fromtimestamp(m["ts"]).strftime("%H:%M")
             line = metrics.elidedText(m["text"], Qt.ElideRight, width)
@@ -763,8 +778,24 @@ class Edith(QWidget):
                         f'{escape(line)}</a></td><td align="right" style="color:{pal.muted}; padding:3px 0;">{when}</td></tr>')
         self.moments.setText(f'<table width="100%" cellspacing="0" cellpadding="0">{"".join(rows)}</table>')
 
+    def _show_suggestion(self, s) -> None:
+        self._suggestion = s
+        self._render_moments()
+        self._fit()
+
     def _ask_moment(self, index: str) -> None:
         from datetime import datetime
+
+        if index.startswith("sug:"):
+            s, self._suggestion = self._suggestion, None
+            self._render_moments()
+            if s is not None and index == "sug:yes":
+                self.answer.setText("")
+                self.agent.accept_suggestion(s)
+            elif s is not None:
+                self.agent.detector.decline(s)
+            self._fit()
+            return
 
         m = self._moments[int(index)]
         question = self.agent.t("about_moment", time=datetime.fromtimestamp(m["ts"]).strftime("%H:%M"), text=m["text"])
@@ -782,6 +813,16 @@ class Edith(QWidget):
     def _toggle_menu(self, on: bool) -> None:
         self.menu.setVisible(on)
         self._fit()
+
+    def _toggle_suggest(self) -> None:
+        self.state["suggest_recipes"] = not self.state.get("suggest_recipes", True)
+        self._save_state()
+        self._label_suggest()
+        if not self.state["suggest_recipes"]:
+            self._show_suggestion(None)
+
+    def _label_suggest(self) -> None:
+        self.btn_suggest.setText(self.agent.t("suggest_on" if self.state.get("suggest_recipes", True) else "suggest_off"))
 
     def _toggle_local(self) -> None:
         self.agent.router.local_only = not self.agent.router.local_only

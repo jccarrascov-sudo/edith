@@ -22,6 +22,14 @@ made by hand; a new Edith home) and goes through the same Agent the panel uses:
                  twice, Muse Spark replans from the error, the letter is right, the bug is gone
  13. level-down  the bug again, and this time the replan is forced to fail too: the recipe is
                  compiled again at level 2 (Word through COM) and the letter is right
+ 14. detect      (a new folder) two letters made by hand from one template -> "¿Guardo esto como
+                 receta?" -> Yes -> a verified recipe
+ 15. form-l4     a desktop app with only a user interface (demo/desktop/northwind.ps1): the form
+                 filled once -> Muse Spark compiles it at level 4 (UI Automation on the hidden
+                 desktop; verified in dry runs, nothing saved) -> "en Northwind para Panadería
+                 Ñandú" -> preview -> Enter saves it in the app -> Undo restores the app's data
+ 16. form-l5     the same form forced to level 5: SAM 3.1 finds the controls on a screenshot of the
+                 hidden desktop -> verified -> preview for another client -> Esc, nothing saved
 The real Muse Spark API is used for compiling (cost printed); running a recipe calls no model.
 Exit code 0 only if every step of every run is OK.
 """
@@ -49,6 +57,13 @@ def main() -> int:
     from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env")
+    import logging
+
+    (ROOT / "results" / "logs").mkdir(parents=True, exist_ok=True)
+    h = logging.FileHandler(ROOT / "results" / "logs" / "demo_check_edith.log", mode="w", encoding="utf-8")
+    h.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+    logging.getLogger("edith").addHandler(h)          # why a step failed, kept for the next look
+    logging.getLogger("edith").setLevel(logging.INFO)
     results = []
     for i in range(args.runs):
         steps = one_run(Path(tempfile.mkdtemp(prefix="edith-check-user-")))
@@ -172,6 +187,7 @@ def one_run(user: Path) -> list[tuple[str, bool, str]]:
                     f"{(d.replies or [''])[-1][:40]}"))
         lessons_steps(a, d, user, out)
         escalation_steps(a, d, user, out)
+        p4_steps(out)
     except Exception as exc:
         out.append(("error", False, f"{type(exc).__name__}: {exc}"[:200]))
     finally:
@@ -278,7 +294,9 @@ def escalation_steps(a, d, user: Path, out: list) -> None:
         ok = (p is not None and "Dear Taller Ñuñoa," in txt and FORCED not in a.recipes.program(r)
               and r.level == level and any(a.t("escalate_replan") == x for x in seen))
         went = [x for x in seen if x.startswith(("Falló", "Probándolo"))]
-        out.append((step, ok, f"level {r.level} · " + " → ".join(dict.fromkeys(went)) + (f" · {p.failed}" if p and p.failed else "")))
+        last = f" · last line: {seen[-1]}" if not ok and seen else ""
+        out.append((step, ok, f"level {r.level} · " + " → ".join(dict.fromkeys(went)) +
+                    (f" · {p.failed}" if p and p.failed else "") + last))
 
     # 12. replan at the same level
     force_bug(a)
@@ -305,6 +323,102 @@ def escalation_steps(a, d, user: Path, out: list) -> None:
     finally:
         a.recipe_runner.escalator = keep
     check("level-down", 2)
+
+
+def fresh_agent():
+    from edith.config import load_config
+    from edith.ui import agent as agent_mod
+
+    cfg = load_config()
+    cfg.root = Path(tempfile.mkdtemp(prefix="edith-check-home-"))
+    cfg.ui["language"] = "es"
+    a = agent_mod.Agent(cfg)
+    return a, Driver(a)
+
+
+def p4_steps(out: list) -> None:
+    import json
+    import os
+
+    import make_letters
+    from edith.recipes import docs, forms, learn
+
+    # 14. a task done twice is noticed and offered
+    folder = Path(tempfile.mkdtemp(prefix="edith-check-twice-"))
+    f = make_letters.make(folder, hand=True)
+    old = time.time() - 3600
+    os.utime(f["template"], (old, old))
+    _h, rows = docs.sheet_rows(f["sheet"])
+    second = make_letters.hand_letter(rows[4], folder)
+    now = time.time()
+    recent = [(f["template"], now - 600), (f["sheet"], now - 650), (f["result"], now - 300), (second, now - 10)]
+    real_recent = learn.recent_files
+    learn.recent_files = lambda minutes: recent          # Windows' recent files, as they would list it
+    try:
+        a, d = fresh_agent()
+        t0 = time.monotonic()
+        a.check_suggestion()
+        end = time.monotonic() + 30
+        got = []
+        a.suggestion.connect(got.append)
+        while not got and time.monotonic() < end:
+            pump()
+            time.sleep(0.05)
+        sug = got[0] if got else None
+        if sug is not None:
+            a.accept_suggestion(sug)
+            _wait(a, 300)
+        rs = a.recipes.all()
+        ok = sug is not None and len(rs) == 1 and rs[0].level == 1 and docs.fold(rs[0].template) == docs.fold(str(f["template"]))
+        out.append(("detect", ok, f"{time.monotonic() - t0:.1f} s · " + (a.t("suggest_line", name=sug.name) if sug else "no suggestion")
+                    + f" · {len(rs)} recipe(s)"))
+    finally:
+        learn.recent_files = real_recent
+
+    # 15. a desktop form at level 4
+    folder = Path(tempfile.mkdtemp(prefix="edith-check-form-"))
+    f = make_letters.make(folder)
+    store = folder / "northwind.jsonl"
+    store.write_text('{"Client":"earlier"}\n', encoding="utf-8")
+    app = ROOT / "demo" / "desktop" / "northwind.ps1"
+    cmd = f'powershell -NoProfile -ExecutionPolicy Bypass -File "{app}" -Store "{store}"'
+    typed = {"Client": "Paper Moth Bakery", "Tax ID": "99815188447", "Date": "10/09/2026", "Amount": "4216.96",
+             "Description": "Notebooks and pens"}
+    demo = forms.FormDemo(cmd, "Northwind Desktop - New invoice", "powershell.exe", typed, "Save", f["sheet"], 70,
+                          forms.state_files(cmd))
+    a, d = fresh_agent()
+    t0 = time.monotonic()
+    try:
+        r = forms.compile_form(a.cfg, demo, store=a.recipes, levels=(4,))
+        compiled = f"compiled at level {r.level} in {time.monotonic() - t0:.0f} s"
+    except Exception as exc:
+        out.append(("form-l4", False, f"compile: {exc} {getattr(exc, 'kw', '')}"[:160]))
+        return
+    before = store.read_text(encoding="utf-8")
+    d.do("en Northwind para Panadería Ñandú", decide=True)
+    p = d.preview
+    lines = store.read_text(encoding="utf-8").splitlines()
+    last = json.loads(lines[-1]) if lines else {}
+    saved = last.get("Client") == "Panadería Ñandú" and last.get("Amount") == "3241.24"
+    d.do("deshaz")
+    restored = store.read_text(encoding="utf-8") == before
+    ok = p is not None and "Client: Panadería Ñandú" in p.new_text and saved and restored
+    out.append(("form-l4", ok, f"{compiled} · preview {p.seconds if p else 0:.1f} s · saved {saved} · undo {restored}"))
+
+    # 16. the same form forced to level 5 (SAM 3.1)
+    a.recipes.delete(a.recipes.all()[0].id)
+    t0 = time.monotonic()
+    try:
+        r = forms.compile_form(a.cfg, demo, store=a.recipes, levels=(5,))
+        compiled = f"compiled at level {r.level} in {time.monotonic() - t0:.0f} s, points {len(r.extra['points'])}"
+    except Exception as exc:
+        out.append(("form-l5", False, f"compile: {exc} {getattr(exc, 'kw', '')}"[:160]))
+        return
+    before = store.read_text(encoding="utf-8")
+    d.do("en Northwind para Café Señorial", decide=False)
+    p = d.preview
+    ok = p is not None and "Client: Café Señorial" in p.new_text and store.read_text(encoding="utf-8") == before
+    out.append(("form-l5", ok, f"{compiled} · preview {p.seconds if p else 0:.1f} s · Esc, nothing saved"))
 
 
 def pump() -> None:

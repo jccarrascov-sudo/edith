@@ -57,6 +57,22 @@ TEXT = {
         "recipe_delete": "Delete",
         "stopped": "Stopped. Nothing else will run.",
         "fix_label": "Correct",
+        "free_trying": "There is no recipe for that yet: trying it myself, on a copy…",
+        "free_no_files": "I don't know which files to use. Open them (or name them) and ask me again.",
+        "free_stuck": "I couldn't finish it: {why}.",
+        "free_done_files": "Done: {n} file(s) in {folder}. You can undo it from here.",
+        "free_learned": "Learned this task: {name} (level {level}). Next time ask me \u201cdo the same for …\u201d.",
+        "web_done": "Done: {n} sent to {site}.",
+        "web_no_undo": "A site's records can't be taken back from here.",
+        "needs_user": "The site asks for a check only you can do (CAPTCHA or a two-step code). Do it in the window I opened, then ask me again.",
+        "learn_no_form": "I didn't see that form filled twice in the memory any more.",
+        "recipe_which_recipe": "I can do that with {options}. Which one? (say it with its name)",
+        "form_done": "Done: {n} saved in {app}.",
+        "form_no_undo": "This app doesn't say where it keeps its data, so this can't be undone from here.",
+        "correct_word_only": "For now, corrections work on Word documents.",
+        "suggest_line": "Save this as a recipe? \u201c{name}\u201d",
+        "suggest_yes": "Yes", "suggest_no": "No",
+        "suggest_on": "Suggest recipes: on", "suggest_off": "Suggest recipes: off",
         "escalate_replan": "It failed twice on that row; Muse Spark is replanning it…",
         "escalate_level": "Trying it at level {level}…",
         "lesson_learning": "Learning from your correction…",
@@ -209,6 +225,22 @@ TEXT = {
         "recipe_delete": "Borrar",
         "stopped": "Detenido. No se ejecutará nada más.",
         "fix_label": "Corregir",
+        "free_trying": "Aún no hay receta para eso: lo intento yo, en una copia…",
+        "free_no_files": "No sé qué archivos usar. Ábrelos (o nómbralos) y vuelve a pedírmelo.",
+        "free_stuck": "No pude terminarlo: {why}.",
+        "free_done_files": "Listo: {n} archivo(s) en {folder}. Puedes deshacerlo desde aquí.",
+        "free_learned": "Aprendí esta tarea: {name} (nivel {level}). La próxima vez pídeme \u00abhaz lo mismo para …\u00bb.",
+        "web_done": "Listo: {n} enviado(s) a {site}.",
+        "web_no_undo": "Lo enviado a un sitio no se puede deshacer desde aquí.",
+        "needs_user": "El sitio pide una verificación que solo tú puedes hacer (CAPTCHA o un código de dos pasos). Hazla en la ventana que abrí y vuelve a pedírmelo.",
+        "learn_no_form": "Ya no veo ese formulario llenado dos veces en la memoria.",
+        "recipe_which_recipe": "Puedo hacerlo con {options}. ¿Con cuál? (dímelo con su nombre)",
+        "form_done": "Listo: {n} guardado(s) en {app}.",
+        "form_no_undo": "Esta app no dice dónde guarda sus datos, así que esto no se puede deshacer desde aquí.",
+        "correct_word_only": "Por ahora, las correcciones funcionan en documentos de Word.",
+        "suggest_line": "¿Guardo esto como receta? \u00ab{name}\u00bb",
+        "suggest_yes": "Sí", "suggest_no": "No",
+        "suggest_on": "Sugerir recetas: sí", "suggest_off": "Sugerir recetas: no",
         "escalate_replan": "Falló dos veces en esa fila; Muse Spark lo está replanificando…",
         "escalate_level": "Probándolo en el nivel {level}…",
         "lesson_learning": "Aprendiendo de tu corrección…",
@@ -348,6 +380,12 @@ NOT_A_TASK = re.compile(r"^\s*(do (you|i|we|they)|does|did|is|are|was|were)\b|^\
                         r"por ?qu[eé]|c[oó]mo|cu[aá]l)\b", re.IGNORECASE)
 
 
+def rdocs_brief(sheet) -> str:
+    from ..recipes import docs as rdocs
+
+    return rdocs.sheet_brief(sheet, limit=40)
+
+
 def text(lang: str, key: str, **kw) -> str:
     return TEXT.get(lang, TEXT["en"]).get(key, TEXT["en"][key]).format(**kw)
 
@@ -413,6 +451,7 @@ class Agent(QObject):
     undoable = Signal(bool)   # an applied edit can be undone
     result_preview = Signal(object)  # a recipe's result to confirm (recipes.run.Preview), or None
     lesson = Signal(object)          # a lesson just learned (recipes.lessons.Lesson), or a str line
+    suggestion = Signal(object)      # a task done twice, to offer as a recipe (recipes.detect.Suggestion)
     _ui = Signal(object)      # run a function on the UI thread (clipboard, keys)
     reply = Signal(str)       # the answer under the text field (repeated while it streams)
     footnote = Signal(str)    # gray line under the answer: what was sent, or "Answered locally"
@@ -444,10 +483,17 @@ class Agent(QObject):
 
         def escalator(r, key, error, line):
             from ..recipes.escalate import escalate
+            from ..recipes.forms import escalate_form
 
-            return escalate(cfg, self.recipes, r, key, error, line,
-                            on_status=lambda k, kw: self.status.emit(self.t(k, **kw)))
+            on_status = lambda k, kw: self.status.emit(self.t(k, **kw))  # noqa: E731
+            if r.kind == "excel_to_form":
+                return escalate_form(cfg, self.recipes, r, key, error, on_status=on_status)
+            return escalate(cfg, self.recipes, r, key, error, line, on_status=on_status)
         self.recipe_runner.escalator = escalator          # a row failing twice -> Muse Spark
+        self.recipe_runner.allow = cfg.network["allow"]
+        from ..recipes.detect import Detector
+
+        self.detector = Detector(cfg, self.recipes)
         self._edited: str | None = None         # the user's version of a recipe's result
         self._last_run = None                   # (recipe id, key, file made) for "corrige: ..."
         self._last_undo = "edit"               # what Undo undoes: Edith's last edit or recipe run
@@ -493,8 +539,13 @@ class Agent(QObject):
         self.busy_changed.emit(busy)
 
     def _guarded(self, target, request: str) -> None:
+        from ..recipes import web
+
         try:
             target(request)
+        except web.NeedsUser as exc:   # a CAPTCHA / 2-step check: never tried; the user does it, visibly
+            self.reply.emit(self.t("needs_user"))
+            threading.Thread(target=web.open_for_login, args=(str(exc),), daemon=True).start()
         except Exception as exc:  # never leave the panel waiting
             log.exception("request failed")
             self.reply.emit(self.t("failed", error=f"{type(exc).__name__}: {exc}"[:160]))
@@ -515,28 +566,76 @@ class Agent(QObject):
 
     # --- recipes --------------------------------------------------------------------------------
     def _recipe_or(self, fallback):
-        """A request a recipe can do ("do the same for Ñandú") runs the recipe; others go on."""
+        """A request a recipe can do ("do the same for Ñandú") runs the recipe; an order with no
+        recipe goes to free mode; others go on."""
         def route(request: str) -> None:
+            from ..recipes import free
             from ..recipes.run import match
 
             recipes = self.recipes.all()
             m = match(request, recipes) if recipes else None
-            if m is None or not (m.keys or m.ambiguous):
-                fallback(request)
+            if m is None or not (m.keys or m.ambiguous or m.recipes):
+                from ..brain import talk
+
+                if (self.cfg.free.get("enabled") and free.ORDER.search(request) and fallback is not self._edit
+                        and fallback is not self._task and talk.kind(request) not in ("memory", "screen")):
+                    self._free(request)
+                else:
+                    fallback(request)
             elif m.ambiguous:
                 self.reply.emit(self.t("recipe_which", options=", ".join(m.ambiguous[:4])))
+            elif m.recipes:
+                self.reply.emit(self.t("recipe_which_recipe", options=", ".join(m.recipes[:4])))
             else:
                 self._recipe(m)
         return route
 
-    def _learn(self, _request: str = "") -> None:
+    def check_suggestion(self) -> None:
+        """In the background: a task done twice that could be a recipe (shown in the panel)."""
+        def work():
+            try:
+                s = self.detector.check()
+            except Exception:
+                log.debug("recipe detection failed", exc_info=True)
+                s = None
+            self.suggestion.emit(s)
+        threading.Thread(target=work, daemon=True).start()
+
+    def accept_suggestion(self, s) -> None:
+        if self.busy:
+            return
+        self.footnote.emit("")
+        self._set_busy(True)
+        threading.Thread(target=self._guarded, args=(lambda _r: self._learn("", suggestion=s), ""), daemon=True).start()
+
+    def _learn(self, _request: str = "", suggestion=None) -> None:
         from ..recipes import learn
 
+        from ..recipes import forms
+
         self.status.emit(self.t("learn_finding"))
+        on_status = lambda key, kw: self.status.emit(self.t(key, **kw))  # noqa: E731
         try:
-            demo = learn.find_demo(30)
-            r = learn.compile_demo(self.cfg, demo, store=self.recipes,
-                                   on_status=lambda key, kw: self.status.emit(self.t(key, **kw)))
+            if suggestion is not None and suggestion.kind == "excel_to_form":
+                form = forms.find_demo(self.cfg, 12 * 60)
+                if form is None:
+                    raise learn.CannotLearn("learn_no_form")
+                r = forms.compile_form(self.cfg, form, store=self.recipes, on_status=on_status)
+            else:
+                try:
+                    demo = learn.find_demo(30) if suggestion is None else learn.demo_from(suggestion.template,
+                                                                                         suggestion.result)
+                except learn.CannotLearn:
+                    form = forms.find_demo(self.cfg, 30) if suggestion is None else None
+                    demo = None
+                    if form is not None:
+                        r = forms.compile_form(self.cfg, form, store=self.recipes, on_status=on_status)
+                    else:
+                        r = self._learn_web()                        # a web form: level 3
+                        if r is None:
+                            raise
+                if demo is not None:
+                    r = learn.compile_demo(self.cfg, demo, store=self.recipes, on_status=on_status)
         except learn.CannotLearn as exc:
             self.reply.emit(self.t(exc.key, **exc.kw))
             return
@@ -550,6 +649,9 @@ class Agent(QObject):
 
         m = lessons.CORRECT.match(request)
         r = next((x for x in self.recipes.all() if self._last_run and x.id == self._last_run[0]), None)
+        if r is not None and r.kind != "excel_to_word":
+            self.reply.emit(self.t("correct_word_only"))
+            return
         if r is None or not Path(self._last_run[2]).exists():
             self.reply.emit(self.t("correct_nothing"))
             return
@@ -563,13 +665,58 @@ class Agent(QObject):
         r = next(x for x in self.recipes.all() if x.id == r.id)
         self._recipe(Match(r, [self._last_run[1]]), keep_lesson=True)
 
-    def _learn_lesson(self, r, key: str, made: Path, corrected: Path) -> None:
+    def _watch_applied(self, p, poll_s: float = 5.0) -> None:
+        """(c) The user edits the document Edith just saved: learn from their version."""
+        from ..recipes import lessons
+
+        o = p.outputs[0]
+        theirs = lessons.watch_applied(o.final, o.made, float(self.cfg.lessons.get("watch_minutes", 10)), poll_s=poll_s)
+        if theirs is not None:
+            self._learn_lesson(p.recipe, o.key, o.made, theirs, source="edited_after")
+
+    def _watch_rejected(self, p, poll_s: float = 5.0) -> None:
+        """(d) The user discarded the preview and made that document their own way."""
+        from ..recipes import lessons
+
+        o = p.outputs[0]
+        theirs = lessons.watch_rejected(Path(p.recipe.out_dir), o.key, Path(p.recipe.template), time.time(),
+                                        float(self.cfg.lessons.get("watch_minutes", 10)), poll_s=poll_s)
+        if theirs is not None:
+            self._learn_lesson(p.recipe, o.key, o.made, theirs, source="own_way")
+
+    def _learn_web(self):
+        """A web form filled from a sheet in the memory -> the workshop's verified machine (reused
+        if there is one) -> a level-3 recipe. None if there is no such demonstration."""
+        from ..learn import plan as plan_mod
+        from ..recipes import web
+
+        events = Timeline(self.cfg).read()
+        demos = [d for d in seg_mod.find_demos(events) if d.url and d.submit]
+        if not demos:
+            return None
+        demo = demos[0]
+        titles = [e.get("window", "") for e in events if (e.get("process") or "").lower() == "excel.exe"]
+        workbook = src_mod.find_workbook(titles)
+        tool_dir = find_machine(workbook, demo.url) if workbook else None
+        if tool_dir is None:
+            self.status.emit(self.t("planning"))
+            plan = plan_mod.make_plan(self.cfg, demo, "", events, log_fn=log.debug)
+            plan_mod.save_plan(plan)
+            self.status.emit(self.t("learn_compiling", level=3))
+            code, v = build.fabricate(self.cfg, plan, log_fn=log.debug)
+            if not v.ok:
+                return None
+            tool_dir = build.save_tool(plan, code, v)
+            build.compile_down(tool_dir, log_fn=log.debug)
+        return web.recipe_from_tool(self.recipes, tool_dir, self.cfg.network["allow"], max(0.0, demo.end - demo.start))
+
+    def _learn_lesson(self, r, key: str, made: Path, corrected: Path, source: str = "") -> None:
         """In the background, after the user's corrected version was saved."""
         from ..recipes import lessons
 
         self.lesson.emit(self.t("lesson_learning"))
         try:
-            les = lessons.learn(self.cfg, self.recipes, r, key, made, corrected=corrected)
+            les = lessons.learn(self.cfg, self.recipes, r, key, made, corrected=corrected, source=source)
         except Exception:
             log.exception("learning a lesson failed")
             les = None
@@ -597,6 +744,8 @@ class Agent(QObject):
         self.result_preview.emit(None)
         if not self._confirmed:
             self.reply.emit(self.t("recipe_discarded"))
+            if (p.recipe.kind == "excel_to_word" and len(p.outputs) == 1 and self.cfg.lessons.get("after_reject")):
+                threading.Thread(target=self._watch_rejected, args=(p,), daemon=True).start()       # (d)
             return
         edited, corrected, made = self._edited, None, p.outputs[0].made
         self._edited = None
@@ -606,19 +755,125 @@ class Agent(QObject):
             if [rdocs.squash(x) for x in edited.splitlines() if rdocs.squash(x)] != rdocs.shape(made).paragraphs:
                 corrected = lessons.apply_edit(made, edited, made.parent / "corrected" / made.name)
                 p.outputs[0].made = corrected
-        self.recipe_runner.apply(p)
+        applied = self.recipe_runner.apply(p)
         self._last_run = (p.recipe.id, p.outputs[-1].key, str(p.outputs[-1].made))
         if corrected is not None:
             threading.Thread(target=self._learn_lesson, args=(p.recipe, p.outputs[0].key, made, corrected),
                              daemon=True).start()
+        elif (p.recipe.kind == "excel_to_word" and len(p.outputs) == 1 and self.cfg.lessons.get("after_apply")):
+            threading.Thread(target=self._watch_applied, args=(p,), daemon=True).start()            # (c)
         self._last_undo = "recipe"
-        self.undoable.emit(True)
+        self.undoable.emit(applied is not None)
         n = len(p.outputs)
+        if p.recipe.kind == "excel_to_web":
+            self.reply.emit(self.t("web_done", n=n, site=p.recipe.extra.get("title", p.recipe.name)) + " " + self.t("web_no_undo"))
+            return
+        if p.recipe.kind == "excel_to_form":
+            done = self.t("form_done", n=n, app=p.recipe.extra.get("title", p.recipe.name).split(" - ")[0])
+            self.reply.emit(done + ("" if applied is not None else " " + self.t("form_no_undo")))
+            return
         what = self.t("recipe_docs_1") if n == 1 else self.t("recipe_docs", n=n)
         done = self.t("recipe_done", n=what, folder=os.path.basename(p.recipe.out_dir) or p.recipe.out_dir)
         if p.failed:
             done += " " + self.t("recipe_some_failed", n=len(p.failed), first=p.failed[0][1][:80])
         self.reply.emit(done)
+
+    def _free(self, request: str) -> None:
+        """Free mode: try it as an agent, show the result, apply on Enter, then learn it as a recipe."""
+        import shutil as _sh
+        from types import SimpleNamespace
+
+        from ..config import ROOT
+        from ..recipes import free, learn
+        from ..recipes.run import Output, Preview
+
+        self._stopped = False
+        ask = free.muse_chat(self.cfg)
+        apps = {t: c.replace("demo\\", str(ROOT / "demo") + "\\") for t, c in (self.cfg.free.get("apps") or {}).items()}
+        app = free.app_for(request, apps)
+        recent = learn.recent_files(12 * 60)
+        sheet = next((p for p, _t in sorted(recent, key=lambda x: -x[1]) if p.suffix.lower() == ".xlsx"), None)
+        self.status.emit(self.t("free_trying"))
+        if app is not None:
+            title, cmd = app
+            data = ("The Excel sheet:\n" + rdocs_brief(sheet)) if sheet else "(no sheet open)"
+            o = free.run_desktop(request, cmd, title, data, ask)
+        else:
+            inputs = free.inputs_for(request, recent)
+            if not inputs:
+                self.reply.emit(self.t("free_no_files"))
+                return
+            o = free.run_files(request, inputs, ask)
+        if self._stopped:
+            return
+        if not o.ok:
+            self.reply.emit(self.t("free_stuck", why=o.why))
+            return
+        if o.kind == "files":
+            made = o.made
+            new_text = "\n".join(free._brief(f) for f in made)[:3000]
+            level = 1
+        else:
+            made = []
+            new_text = "\n".join(f"{k}: {v}" for k, v in o.values.items() if v != "(button)")
+            level = 4
+        title = (app[0] if app else (made[0].name if made else request))
+        fake = SimpleNamespace(level=level, kind="free", id="free", name=title, extra={"title": title})
+        outs = [Output("", f, f) for f in made] or [Output("", Path(title), Path(title))]
+        p = Preview(fake, outs, o.seconds, "", new_text, [])
+        self.status.emit("")
+        self._decision.clear()
+        self.awaiting = True
+        self.result_preview.emit(p)
+        self._decision.wait()
+        self.awaiting = False
+        self.result_preview.emit(None)
+        if not self._confirmed:
+            self.reply.emit(self.t("recipe_discarded"))
+            return
+        if o.kind == "files":
+            folder = inputs[0].parent
+            import hashlib
+
+            from ..recipes.run import Applied
+
+            applied, kept = [], []
+            for f in made:
+                dst = folder / f.name
+                backup = None
+                if dst.exists():                              # never lose the user's file: back it up
+                    backup = f.parent / "backup" / f.name
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    _sh.copy2(dst, backup)
+                _sh.copy2(f, dst)
+                applied.append(dst)
+                kept.append((dst, backup, hashlib.sha256(dst.read_bytes()).hexdigest()))
+            self.recipe_runner.last = Applied("free", kept, time.time())     # Undo removes / restores them
+            self._last_undo = "recipe"
+            self.undoable.emit(True)
+            self.reply.emit(self.t("free_done_files", n=len(applied), folder=folder.name))
+        else:
+            errors = free.replay(app[1], app[0], o.actions)
+            if errors:
+                self.reply.emit(self.t("recipe_failed", why=errors[0]))
+                return
+            applied = []
+            self.reply.emit(self.t("form_done", n=1, app=app[0].split(" - ")[0]))
+        threading.Thread(target=self._induce, args=(o, inputs if o.kind == "files" else [], applied, app, sheet),
+                         daemon=True).start()
+
+    def _induce(self, o, inputs, applied, app, sheet) -> None:
+        """After the user applied a free-mode result: compile it as a recipe when it is a row task."""
+        from ..recipes import free
+
+        try:
+            r = (free.induce_files(self.cfg, self.recipes, o, inputs, applied) if o.kind == "files"
+                 else free.induce_desktop(self.cfg, self.recipes, o, app[1], app[0], sheet))
+        except Exception:
+            log.info("inducing a recipe from free mode failed", exc_info=True)
+            r = None
+        if r is not None:
+            self.lesson.emit(self.t("free_learned", name=r.name, level=r.level))
 
     def _cant(self, request: str) -> None:
         self.reply.emit(self.t("cant_act"))

@@ -1,0 +1,16 @@
+mode,step,ok,detail
+api,capture,True,"11 events: ['frame', 'text', 'transcript', 'window']"
+api,temporal,True,"[cloud, 4.8 s, $0.0027] Dijo que el examen es el viernes 13 de noviembre, y que entra recursión y memoización, nad"
+api,edit,True,"[cloud, 17.2 s] - Examen: viernes 13 de noviembre, entra recursión y memoización, nada de grafos todavía. / - Tarea:"
+api,apply,True,written into the test textarea
+api,undo,True,"back to ""Apuntes:"""
+offline,capture,True,"11 events: ['frame', 'text', 'transcript', 'window']"
+offline,temporal,True,"[local, 75.2 s, $0.0000] El profe dijo hace unos minutos que el examen es el viernes 13 de noviembre, y que entra r"
+offline,edit,True,"[local, 65.5 s] Examen: viernes 13 de noviembre / Tarea: implementar Fibonacci con memoización, para el lunes. Subir"
+offline,apply,True,written into the test textarea
+offline,undo,True,"back to ""Apuntes:"""
+budget,capture,True,"11 events: ['frame', 'text', 'transcript', 'window']"
+budget,temporal,True,"[local, 87.8 s, $0.0000] El profe dijo que el examen es el viernes 13 de noviembre y que entra recursión y memoizac"
+budget,edit,True,"[local, 77.5 s] Examen: viernes 13 de noviembre / Tarea: implementar Fibonacci con memoización, para el lunes. Subir"
+budget,apply,True,written into the test textarea
+budget,undo,True,"back to ""Apuntes:"""

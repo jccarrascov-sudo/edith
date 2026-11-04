@@ -39,6 +39,7 @@ class Match:
     recipe: Recipe
     keys: list[str]
     ambiguous: list[str] = field(default_factory=list)   # "Lazy Comet": which of these?
+    recipes: list[str] = field(default_factory=list)     # two recipes fit: which one? (their names)
 
 
 @dataclass
@@ -88,7 +89,10 @@ def match(request: str, recipes: list[Recipe]) -> Match | None:
     if QUESTION.search(request) and not POLITE.search(request):
         return None
     asked = _words(request)
-    best: Match | None = None
+    named = [r for r in recipes if _mentions(request, r)]
+    if named:                                        # "la carta para...", "en Northwind para...": only those
+        recipes = named
+    found: list[Match] = []
     for r in recipes:
         keys = _keys_of(r)
         if not keys:
@@ -105,14 +109,20 @@ def match(request: str, recipes: list[Recipe]) -> Match | None:
             groups.setdefault(w, []).append(k)
         keys_out = [g[0] for g in groups.values() if len(g) == 1]
         unclear = [k for g in groups.values() if len(g) > 1 for k in g]
-        m = Match(r, keys_out, unclear if not keys_out else [])
-        if best is None or len(m.keys) > len(best.keys):
-            best = m
-    return best
+        found.append(Match(r, keys_out, unclear if not keys_out else []))
+    if not found:
+        return None
+    top = max(len(m.keys) for m in found)
+    best = [m for m in found if len(m.keys) == top]
+    if len(best) > 1 and top:                         # the same rows fit two recipes: ask which
+        return Match(best[0].recipe, best[0].keys, recipes=[m.recipe.name for m in best])
+    return best[0]
 
 
 def _mentions(request: str, r: Recipe) -> bool:
-    return bool(_words(r.name + " " + Path(r.template).stem) & _words(request))
+    words = _words(r.name) | ({"carta", "letter", "documento", "document", "word"} if r.kind == "excel_to_word"
+                              else {"formulario", "form"} | _words(r.extra.get("title", "")))
+    return bool(words & _words(request))
 
 
 def _sha(p: Path) -> str:
@@ -125,6 +135,7 @@ class Runner:
         self.last: Applied | None = None
         # (recipe, key, error, line) -> a fixed recipe, or raises escalate.GaveUp; set by the app
         self.escalator = None
+        self.allow: list[str] | None = None   # sites where a web recipe may use the network level
 
     def proof_ok(self, r: Recipe, program: str, work: Path) -> tuple[bool, str]:
         proof = self.store.proof(r)
@@ -142,6 +153,10 @@ class Runner:
         from .lessons import lock
 
         r = m.recipe
+        if r.kind == "excel_to_form":
+            return self._prepare_form(m)
+        if r.kind == "excel_to_web":
+            return self._prepare_web(m)
         with lock(r.id):                     # a lesson being learned finishes first
             pass
         program = self.store.program(r)
@@ -160,7 +175,7 @@ class Runner:
             o = results[k]
             if not o.ok:                                # a second try (a passing glitch)
                 o = sandbox.run(program, r.level, r.sheet, r.template, k, str(work / f"k{i}b"))
-            if not o.ok and self.escalator is not None:  # failed twice: Muse Spark takes over
+            if not o.ok and self.escalator is not None and r.kind == "excel_to_word":   # failed twice: Muse Spark
                 from .escalate import GaveUp
 
                 try:
@@ -180,7 +195,98 @@ class Runner:
         seconds = time.monotonic() - t0
         return Preview(r, outputs, seconds, docs.shape(r.template).text(), docs.shape(outputs[0].made).text(), failed)
 
+    def _prepare_form(self, m: Match) -> Preview:
+        """Dry runs on the hidden desktop: what would be typed, row by row; nothing is saved."""
+        from . import forms
+
+        r = m.recipe
+        t0 = time.monotonic()
+        work = self.store.dir / r.id / "runs" / time.strftime("%Y%m%d-%H%M%S")
+        done, failed = forms.preview(self.store, r, m.keys, work)
+        if failed:                                      # a second try, then Muse Spark takes over
+            from .escalate import GaveUp
+
+            again, failed = forms.preview(self.store, r, [k for k, _w in failed], work / "retry")
+            done += again
+            still = []
+            for k, why in failed:
+                if self.escalator is None:
+                    still.append((k, why))
+                    continue
+                try:
+                    r = self.escalator(r, k, why, None)
+                    more, bad = forms.preview(self.store, r, [k], work / "escalated")
+                    done += more
+                    still += bad
+                except GaveUp as exc:
+                    still.append((k, exc.line))
+            failed = still
+        if not done:
+            raise RuntimeError(failed[0][1] if failed else "nothing was made")
+        outputs = []
+        for i, (k, values) in enumerate(done):
+            made = work / f"k{i}" / "values.txt"
+            made.write_text("\n".join(f"{n}: {v}" for n, v in values.items()), encoding="utf-8")
+            outputs.append(Output(k, made, Path(r.extra.get("title", r.name))))
+        first = outputs[0].made.read_text(encoding="utf-8")
+        return Preview(r, outputs, time.monotonic() - t0, "", first, failed)
+
+    def _prepare_web(self, m: Match) -> Preview:
+        """What each row will send to the site (from the verified machine); nothing is sent."""
+        from . import web
+
+        r = m.recipe
+        t0 = time.monotonic()
+        work = self.store.dir / r.id / "runs" / time.strftime("%Y%m%d-%H%M%S")
+        rows = web.rows_for(r, m.keys)
+        if not rows:
+            raise RuntimeError("none of those rows is in the sheet")
+        outputs = []
+        for i, (k, lines) in enumerate(web.preview_text(r, rows)):
+            made = work / f"k{i}" / "values.txt"
+            made.parent.mkdir(parents=True, exist_ok=True)
+            made.write_text(lines, encoding="utf-8")
+            outputs.append(Output(k, made, Path(r.extra.get("title", r.name))))
+        return Preview(r, outputs, time.monotonic() - t0, "", outputs[0].made.read_text(encoding="utf-8"), [])
+
+    def _apply_web(self, p: Preview) -> None:
+        from . import web
+
+        r = p.recipe
+        errors = web.send(r, web.rows_for(r, [o.key for o in p.outputs]), self.allow)
+        if errors:
+            raise RuntimeError(errors[0])
+        self.store.record_run(r, {"ts": time.time(), "keys": [o.key for o in p.outputs], "seconds": round(p.seconds, 2),
+                                  "ok": True, "applied": True, "failed": 0})
+        self.last = None                         # a site's records cannot be taken back from here
+        return None
+
+    def _apply_form(self, p: Preview) -> Applied:
+        """After Enter: the app's data files are backed up (when known), then the program presses
+        the button for real, on the hidden desktop."""
+        from . import forms
+
+        r = p.recipe
+        work = p.outputs[0].made.parent.parent
+        backups = []
+        for f in r.extra.get("state", []):
+            b = work / "backup" / Path(f).name
+            b.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, b)
+            backups.append((Path(f), b))
+        errors = forms.submit_for_real(self.store, r, [o.key for o in p.outputs], work)
+        if errors:
+            raise RuntimeError(errors[0])
+        self.last = Applied(r.id, [(f, b, _sha(f)) for f, b in backups], time.time()) if backups else None
+        self.store.record_run(r, {"ts": time.time(), "keys": [o.key for o in p.outputs], "seconds": round(p.seconds, 2),
+                                  "ok": True, "applied": True, "failed": len(p.failed)})
+        return self.last
+
     def apply(self, p: Preview) -> Applied:
+        if p.recipe.kind == "excel_to_form":
+            return self._apply_form(p)
+        if p.recipe.kind == "excel_to_web":
+            return self._apply_web(p)
         files = []
         backups = p.outputs[0].made.parent.parent / "backup"
         for o in p.outputs:

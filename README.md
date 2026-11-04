@@ -1,20 +1,70 @@
 # Edith
 
-**Do it once. Edith does the rest.**
+**{THEME}** — Every week we redo the same small computer tasks by hand (a letter per client, an
+invoice per row), because teaching a computer to do them still takes a programmer.
+
+**Show it once. Edith does the next ones.**
 
 Built for the Meta Global AI Developer Hackathon 2026 (Indie Developer track).
 
-A minimal desktop assistant that remembers the last ~10 minutes of your screen and system
-audio, so you can ask it what just happened: *"what was the video about?"*, *"what was that
-error in the terminal 5 minutes ago?"*. Do a task once by hand and say *"do the rest"*: it
-learns the task from its memory, builds a machine, verifies it against what you did, and
-runs it on the remaining rows after you confirm.
+Do a task once by hand — a Word letter from a row of an Excel sheet, an invoice typed into a
+desktop app — and tell Edith *"learn this"*. Muse Spark compiles what you did into a small
+program at the **lowest level that gives exactly your result**, verifies it on copies against
+your own work, and keeps it as a **recipe**. Next time, *"do the same for Panadería Ñandú"* runs
+in half a second, as a preview you confirm with Enter. Correct a result once and Edith keeps
+the **lesson**. It also remembers the last ~10 minutes of your screen and audio, so you can ask
+what just happened. *Your screen never leaves your PC. Only what you ask goes to the cloud.*
 
-Two Meta models share the work. **Muse Glimmer 30B** runs on your PC (llama.cpp, ~2 GB of
-VRAM) for background notes and for answers when the cloud is not used; **Muse Spark**
-(`muse-spark-1.3`, Meta Model API) answers only when you ask something, with the cheapest
-context that can answer. *Your screen never leaves your PC. Only what you ask goes to the
-cloud.*
+```mermaid
+flowchart LR
+    U["You do it once by hand"] --> D["Edith finds the demonstration<br/>(recent files, field values, the Excel row)"]
+    D --> C{"Muse Spark compiles,<br/>lowest level first"}
+    C --> L1["1 · Direct data<br/>openpyxl · python-docx"]
+    C -.-> L2["2 · The app's API<br/>Word through COM"]
+    C -.-> L4["4 · UI Automation<br/>on a hidden desktop"]
+    C -.-> L5["5 · Vision<br/>SAM 3.1 points"]
+    L1 & L2 & L4 & L5 --> V{"Verified on copies<br/>= your own result?"}
+    V -- "no: the differences" --> C
+    V -- yes --> R[("Recipe<br/>+ proof")]
+    R --> P["'Do the same for …'<br/>no model · preview"]
+    P -- Enter --> A["Applied · Undo kept"]
+    P -- "you correct it" --> LS[("Lesson")] --> R
+```
+
+```mermaid
+flowchart TB
+    subgraph PC["Your PC (nothing of the screen leaves it)"]
+        M["Memory: 10-min screen + audio,<br/>day text, key moments"] --> G["Muse Glimmer 30B (local)<br/>notes, offline answers"]
+        S["Recipes run here<br/>(isolated process, hidden desktop)"]
+    end
+    Q["Your question / 'learn this'"] --> SP["Muse Spark (Meta Model API)<br/>answers · compiles · repairs"]
+    SP --> SAM["SAM 3.1<br/>finds controls on a screenshot"]
+    M -. "only what the question needs" .-> SP
+    SP --> S
+```
+
+## How we use Meta's models
+
+| Model | Where | Role in Edith |
+|---|---|---|
+| **Muse Glimmer 30B** (open weights, Apache-2.0; 2-bit GGUF via llama.cpp) | On the PC, ~2 GB VRAM, low priority | Block summaries and key moments of the memory; answers when offline, out of budget or in "local only"; nothing of the continuous capture is ever sent to the cloud |
+| **Muse Spark** (`muse-spark-1.3`, Meta Model API) | Cloud, only when the user asks | Answers questions with the cheapest context that can answer; **compiles recipes** into programs (levels 1, 2, 4, 5); turns a correction into a lesson; **replans** a recipe that failed twice; labels the controls SAM found |
+| **SAM 3.1** (`sam-3.1`, Meta Model API) | Cloud, when a recipe needs eyes | Level 5: finds the fields and buttons of an app on a screenshot of the hidden desktop; also locates elements for the older form machines |
+
+## Research Edith builds on
+
+| Paper | Institution | Venue | What Edith takes from it |
+|---|---|---|---|
+| AXIS: API-first LLM-based agents | Microsoft | ACL 2025 | Prefer an API over clicking: the cascade tries direct data and the app's API before any UI |
+| ASI: Inducing programmatic skills for agentic tasks | Carnegie Mellon University | COLM 2025 | A demonstration becomes a **program**, kept only after it is verified |
+| SkillWeaver: web agents discover and hone skills | The Ohio State University, CMU et al. | arXiv 2025 | Skills as reusable code that is tested before it is kept and honed when it fails (verification, lessons, escalation, web machines that repair themselves when the site changes); unlike SkillWeaver, Edith never explores a site on its own: every skill comes from the user's demonstration |
+| Beyond Browsing: API-based web agents | Carnegie Mellon University | Findings of ACL 2025 | APIs and UI as alternatives to choose from per task (level 3 is planned) |
+| UFO2: the desktop AgentOS | Microsoft | TMLR | UI Automation-first desktop control and a separate desktop so the user is not disturbed (levels 4-5) |
+| AppAgentX: evolving GUI agents | Westlake University et al. | arXiv 2025 | Repeated action sequences become one higher-level action ("¿Guardo esto como receta?") |
+| Mobile-Agent-E: self-evolving assistant | UIUC, Alibaba | NeurIPS 2025 | Two long-term memories: shortcuts (recipes) and tips (lessons) |
+| OS-Copilot: generalist computer agents with self-improvement | Shanghai AI Laboratory et al. | ICLR 2024 (workshop) | Tools the agent writes for itself, checked and kept for later |
+
+Demo video: coming Nov 4.
 
 ## The interface
 
@@ -86,6 +136,156 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   moved back inside the screen near an edge.
 - **Light and dark** follow the Windows app theme live, without restarting: every color is
   a variable with a light and a dark set, and a theme change fades over 250 ms.
+
+## Results (real runs, Nov 3-4, 2026)
+
+Every number below comes from a script in `scripts/` (raw rows in `results/*.csv`). Muse Spark
+and SAM 3.1 are the real Meta Model API; Word, the desktop app and the portal are real; the
+data is fictitious and the memories are built in isolated Edith homes, never the user's.
+
+**Demo-checks** — the whole flow, from nothing, several times in a row:
+
+| Check | What it goes through | Result |
+|---|---|---|
+| `demo_check.py` | learn (Excel -> Word) -> variation in < 3 s -> Enter -> Undo -> ambiguous client -> two letters + Esc -> lesson from the edited preview -> applied by itself -> "corrige: ..." -> applied -> Discard -> a forced bug replanned by Muse Spark -> replan forced to fail: down to level 2 -> "¿Guardo esto como receta?" -> desktop form at level 4 (dry runs, Enter, Undo) -> forced to level 5 with SAM 3.1 {{DC_EXTRA_STEPS}} | {{DC_RESULT}} |
+| `memory_check.py` | capture -> temporal question -> edit from memory -> apply in a test window -> undo, with the API / without internet (local Muse Glimmer) / with the budget reached | 3/3 modes OK |
+
+**Recipes, by level** (the demo letter and the demo desktop form):
+
+| Level | How it runs | Compile (Muse Spark, verified) | One run |
+|---|---|---|---|
+| 1 · direct data | openpyxl + python-docx in the isolated process | 25-51 s, $0.017-0.027, 1st attempt in 15/15 demo-check runs | **0.42-0.66 s** (replay of the demo letter) |
+| 2 · the app's API | Word through COM, invisible | 3/3 on the 1st attempt after the positional-arguments fix | ~5 s (Word starts) |
+| 3 · the web | the site's own request / headless browser with the user's session | the workshop's machine (verified on a temporary database) | network: 28 invoices in 0.3 s (Phase 5) |
+| 4 · UI Automation | controls by name on the hidden desktop | ~70 s (3 dry runs) | 13-17 s (PowerShell + UIA start) |
+| 5 · SAM 3.1 | points found on a screenshot of the hidden desktop | ~57 s | 0.8-2.2 s |
+
+**Coverage mini-benchmark** (`coverage_bench.py`): 20 student tasks (16 Word documents from a
+sheet and a template — certificates, receipts, letters, a grade report that needs an average...
+— and 4 invoices in the desktop app), each run twice: the first time in free mode (Muse Spark plans; the successful run is induced
+as a recipe), the second time as that recipe.
+
+| Run | Correct | Avg time per task |
+|---|---|---|
+| 1 · free mode (then induced as a recipe) | **20/20** | 17.7 s (Word 10-21 s, desktop app 25-29 s) |
+| 2 · the induced recipe | **20/20** | **3.6 s** (Word 0.6-1.9 s at level 1, desktop app 13.7 s at level 4) |
+
+**30 invoices into a desktop app, five ways** (`invoices_bench.py`; correct = exactly what the
+person types; one row has an empty amount):
+
+| Way | Correct | Time per invoice | Cost per invoice |
+|---|---|---|---|
+| (a) click-by-click agent: Muse Spark picks every action | 2/30 | 55.2 s | $0.0106 |
+| (b) Muse Spark writes a program from a text description (no demonstration) | 1/30 | 16.4 s | $0.0007 |
+| (c) **level-4 recipe from ONE invoice typed by hand** | **30/30** | 16.3 s | **$0** (compiled once: 105 s, $0.028) |
+| (d) **level-5 recipe** (SAM 3.1 points) | **30/30** | **0.99 s** | **$0** (compiled once: 56 s, $0.029) |
+| (e) the app changes (v2: "Amount" renamed and moved) -> escalation repairs it | **30/30** | 0.96 s | $0.002 (repair 158 s, $0.061 total) |
+
+Why (a) and (b) fail: without a demonstration they type dates as `2026-10-08` instead of
+`08/10/2026` and amounts as `2697` or `4,216.96` instead of `2697.00` / `4216.96` — the record
+is saved, but not the way the person writes it. The demonstration is what carries those
+conventions. (This run shared the machine with the other benchmarks, so the times of (a)-(c) are
+upper bounds.)
+
+**Memory** (`memory_check.py`, `benchmark.py`; screenshots and memories are synthetic and clean,
+so these are easy cases):
+
+| Measure | Result |
+|---|---|
+| 20 questions about screenshots (errors, charts, tables, receipts...) | 20/20, 6.5 s avg, $0.055 total |
+| 10 edit-from-memory scenarios (notes, replies to an email) | 10/10, 4.7 s to the preview |
+| Key moments vs 30 lines labelled by hand (filter, no model) | precision 94 %, recall 100 % |
+| Temporal question with the API / local only | 3.3 s ($0.0025) / 45-56 s ($0) |
+| **Real cost of 10 test questions** (chat, memory, screen, automation) | **$0.026 total**, 4.1 s avg, 10/10 right |
+
+{{RESOURCES}}
+
+{{QUANT}}
+
+**Cost.** Measured unit costs: a question $0.0008-0.0052 (avg $0.0026); compiling a recipe,
+learning a lesson or replanning ~$0.017 per call; running a recipe $0. A day with 20 questions,
+one new recipe and two corrections costs about **$0.11** (estimate from those unit costs; the
+monthly limit stays at $10 with a warning at 80 %).
+
+## Privacy and security
+
+- **Local:** the 10-minute screen/audio buffer, the day's text, key moments, conversations,
+  recipes and lessons — all in `buffer/` and `state/` on the PC (git-ignored). Muse Glimmer runs
+  locally (llama.cpp on 127.0.0.1).
+- **To the API, only when you ask:** the question with the cheapest context that answers it; for a
+  recipe, the text of the files it uses (or a form's fields; one screenshot of the app on the
+  hidden desktop for level 5). Running a recipe sends nothing. Network audit: 90 s of recording
+  opened 0 outside connections; a question opened exactly one, to the Meta Model API.
+- **Never recorded:** the keyboard (in any mode), password fields, excluded apps; Edith's own text
+  field is not memory.
+- **Confirmations:** every recipe and free-mode run is a preview first (Enter applies, Esc
+  discards, Undo restores from a backup); a site's records cannot be undone, and the panel says so;
+  a CAPTCHA or two-step code is left to you.
+- **Isolation:** programs run in a separate process (AST whitelist + audit hook: no writes outside
+  their folder, no programs, no network, no keys), levels 4-5 on a separate Windows desktop.
+  Tokens live in the Windows Credential Manager. **Ctrl+Alt+Q** stops everything at once.
+- Details: [docs/PRIVACY.md](docs/PRIVACY.md), [docs/NETWORK_AUDIT.md](docs/NETWORK_AUDIT.md).
+
+## Scope and limitations
+
+- Recipes are row-of-a-sheet tasks (one document or one form per row). Free mode handles other
+  file tasks (e.g. a filtered CSV) but only row tasks are induced as recipes.
+- Desktop levels 4-5 were shown on one demo app (PowerShell WinForms); real apps vary in how
+  accessible their controls are. Level 4 runs take 13-17 s because each starts PowerShell and UI
+  Automation. Free mode in desktop apps uses UI Automation only (SAM is used for level-5 recipes).
+- Level 3 was exercised on the local demo portal; real sites with sign-in were not tested here.
+  Edith learns a site only from the user's own demonstration on it: it does not explore sites on
+  its own and does not build APIs from a site's internal traffic.
+- Local answers (Muse Glimmer, 6 GPU layers, ~2 GB VRAM) take 25-56 s; the cloud takes 2-7 s.
+- Lessons trigger (d) (discard, then do it your own way) is built and tested but off by default.
+- The memory benchmarks use synthetic, clean screenshots and memories.
+
+## Setup (Windows 11, Python 3.12)
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -e .
+copy .env.example .env   # then put your Meta Model API key in MODEL_API_KEY
+# Optional local model (~13 GB): llama.cpp and Muse Glimmer 30B (2-bit) with its vision projector
+winget install ggml.llamacpp
+.venv\Scripts\hf download unsloth/Muse-Glimmer-30B-GGUF Muse-Glimmer-30B-UD-Q2_K_XL.gguf mmproj-kquant.gguf
+```
+
+## Usage
+
+In the panel (click the dot or press Ctrl+Alt+E):
+
+| You say / press | Edith |
+|---|---|
+| a task done once by hand, then **"Edith, aprende esto"** / **Ctrl+Alt+R** | compiles and verifies a recipe |
+| **"haz lo mismo para Panadería Ñandú"**, "para Ñandú y Acuña", "para todos" | runs the recipe: preview, Enter, Undo |
+| **Correct** under a preview, or **"corrige: …"** | learns a lesson, applied from then on |
+| an order with no recipe ("haz un CSV con…", "registra en Northwind…") | free mode, then "Aprendí esta tarea" |
+| a question ("¿qué dijo el profe del examen?") | answers from the last minutes / the day |
+| **Ctrl+Alt+Q** | stops everything at once |
+
+Demo files: `python demo/make_letters.py` (template + invoices) and
+`powershell -File demo/desktop/northwind.ps1 -Store demo/data/northwind.jsonl` (the desktop app).
+Evidence: `scripts/demo_check.py`, `scripts/memory_check.py`, `scripts/benchmark.py`,
+`scripts/coverage_bench.py`, `scripts/invoices_bench.py`, `scripts/quant_bench.py`.
+
+From a console:
+
+```powershell
+.venv\Scripts\edith-ui                          # Edith on screen (no console window)
+.venv\Scripts\edith                             # the same, from a console
+.venv\Scripts\python -m edith run              # memory only, Ctrl+C to stop
+.venv\Scripts\python -m edith ask "what was the video about?"
+.venv\Scripts\python -m edith ask "..." --dry-run   # show the context, no model call
+.venv\Scripts\python -m edith ask "..." --local     # answer with the local model only ($0)
+.venv\Scripts\python -m edith cost                  # session and month cost
+.venv\Scripts\python -m edith status
+.venv\Scripts\python -m edith do "what I did 3 minutes ago, do it with the rest"
+.venv\Scripts\python -m unittest discover -s tests       # tests
+.venv\Scripts\python scripts\measure_tokens.py           # token measurements (counts only)
+```
+
+# Under the hood
 
 ## How it works: memory (Phase 1)
 
@@ -162,33 +362,6 @@ now** removes it in two clicks. A runtime audit ([docs/NETWORK_AUDIT.md](docs/NE
 found 0 connections leaving the PC during 90 s of recording, and exactly one (to `api.meta.ai`)
 for a question. The first run shows three short screens: what Edith does, this sentence, and the
 shortcut (changeable there). Details: [docs/PRIVACY.md](docs/PRIVACY.md).
-
-## Setup (Windows 11, Python 3.12)
-
-```powershell
-py -3.12 -m venv .venv
-.venv\Scripts\python -m pip install -e .
-copy .env.example .env   # then put your Meta Model API key in MODEL_API_KEY
-# Optional local model (~13 GB): llama.cpp and Muse Glimmer 30B (2-bit) with its vision projector
-winget install ggml.llamacpp
-.venv\Scripts\hf download unsloth/Muse-Glimmer-30B-GGUF Muse-Glimmer-30B-UD-Q2_K_XL.gguf mmproj-kquant.gguf
-```
-
-## Usage
-
-```powershell
-.venv\Scripts\edith-ui                          # Edith on screen (no console window)
-.venv\Scripts\edith                             # the same, from a console
-.venv\Scripts\python -m edith run              # memory only, Ctrl+C to stop
-.venv\Scripts\python -m edith ask "what was the video about?"
-.venv\Scripts\python -m edith ask "..." --dry-run   # show the context, no model call
-.venv\Scripts\python -m edith ask "..." --local     # answer with the local model only ($0)
-.venv\Scripts\python -m edith cost                  # session and month cost
-.venv\Scripts\python -m edith status
-.venv\Scripts\python -m edith do "what I did 3 minutes ago, do it with the rest"
-.venv\Scripts\python -m unittest discover -s tests       # tests
-.venv\Scripts\python scripts\measure_tokens.py           # token measurements (counts only)
-```
 
 ## How it works: learning backwards (Phase 2)
 
@@ -304,9 +477,9 @@ compiles it into a program at the **lowest level of the cascade** that reproduce
 |---|---|---|
 | 1. Direct data | file libraries (openpyxl, python-docx): no app opens | done |
 | 2. The app's API | Word through COM, invisible | done |
-| 3. Web API / headless browser | | stage C |
-| 4. Background UI Automation on a separate desktop | | stage C |
-| 5. Vision with SAM 3.1 | | stage C |
+| 3. The web | the site's own request (token from the Windows Credential Manager) or headless Playwright with Edith's profile | done |
+| 4. Background UI Automation on a separate desktop | controls by name (ValuePattern / InvokePattern), no mouse or focus | done |
+| 5. Vision with SAM 3.1 | SAM 3.1 finds the controls on a screenshot of the hidden desktop; window messages at those points | done |
 
 - **Verified before it is kept:** the program runs on copies with your row and must give your
   document (paragraphs, table cells, bold/italic, file name), then on two more rows (their values
@@ -364,6 +537,36 @@ and a fresh range per replacement: 3/3 level-2 compiles verified on the first at
 before). Demo-check with escalation (a bug forced for one client; then the replan forced to fail
 too): 5/5 runs, 13 steps each (replan and level-down passed in every run).
 
+### Levels 4-5 and noticing a task done twice (priority 4)
+
+- **Desktop forms.** `demo/desktop/northwind.ps1` is an invoice-entry app with only a user
+  interface (no file a program may write, no COM, no web API): its recipe starts at level 4. The
+  demonstration is what the memory already records (field values and the click on Save, never
+  the keyboard) and the Excel row they came from. Everything runs on a separate Windows desktop
+  ("EdithWork"): the app and the recipe's isolated process start there, so nothing appears on
+  the user's screen and no mouse or focus is taken.
+  - Level 4: the program gets a `ui` object (`ui.set(name, value)`, `ui.invoke(name)`), by the
+    controls' accessible names through UI Automation.
+  - Level 5: Edith takes a screenshot of the app on the hidden desktop (PrintWindow), SAM 3.1
+    finds the fields and the button, Muse Spark says which is which, and the program types and
+    clicks at those points through window messages.
+  - Verification never saves: in a dry run the submit button is not pressed and the fields are
+    read at that moment (the user's row must give exactly what they typed; two more rows their
+    own values). After Enter the same program presses Save; Undo restores the app's data file
+    when its command line names it.
+  - Found on the way: SAM 3.1 found no field with "text box" (white on light gray, 420x300);
+    at 2x with "white rectangle" it found all five and the button. `GetWindowText` cannot read
+    another process's edit box (WM_GETTEXT is used), and pywin32's WM_CHAR mangled "Ñandú"
+    (SendMessageW is used).
+- **"¿Guardo esto como receta?"** Two Word documents saved from the same template today, or the
+  same form filled and submitted twice, give one line in the panel (never a pop-up) with Yes /
+  No; Yes compiles it like "learn this"; No is remembered; Options -> "Suggest recipes" turns it off.
+- When two recipes fit the same request (the letter and the form use the same sheet), Edith asks
+  which, unless the request names one ("la carta para...", "en Northwind para...").
+
+Demo-check with these steps (detect -> Yes -> recipe; form at level 4 -> preview -> Enter -> Undo;
+form forced to level 5 with SAM 3.1 -> preview -> Esc): PENDING_P4.
+
 ## Demo environment
 
 A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitious invoices
@@ -417,6 +620,12 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Recipes (stage A): demo finding, compile with Muse Spark at levels 1-2, verification on copies, sandbox (AST whitelist + audit hook), replay with preview/undo, recipe list, Ctrl+Alt+R / Ctrl+Alt+Q, demo-check | done |
 | Lessons (priority 2): correct the preview or "corrige: …" -> the recipe's program changes and is re-verified, "Learned: …" with Discard, applied on the next run | done |
 | Escalation (priority 3): a row failing twice -> Muse Spark replans from the error -> next level of the cascade -> a one-line stop | done |
+| Levels 4-5 (priority 4): desktop forms on a hidden desktop, UI Automation by name, SAM 3.1 points; dry-run verification; "¿Guardo esto como receta?" | done |
+| Level 3 recipes (web: site API with Credential Manager tokens, headless browser with the user's session, CAPTCHA/2-step left to the user) | done |
+| Free mode (files on copies, desktop agent on the hidden desktop, 25 steps / 3 min) with recipe induction | done |
+| Lessons (c) edit after apply and (d) own way after Esc (off by default); escalation for forms | done |
+| Activity: per-run metrics (level, time, success, lessons, time saved) | done |
+| Evidence scripts: memory_check, benchmark, coverage_bench (20 tasks), invoices_bench (5 ways), quant_bench | done |
 | Local memory: change-detected capture, mouse-only click log, UIA field values, system audio, 10-min buffer, exclusions | done |
 | `ask` over the last 10 minutes, with token optimizations | done |
 | Learning backwards: demo episode finder, spreadsheet row matcher, Muse Spark block plan + check | done |

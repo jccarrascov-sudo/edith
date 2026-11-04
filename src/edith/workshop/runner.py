@@ -69,9 +69,15 @@ def run_rows(plan: dict, code: dict[str, str], rows: list[tuple[int, dict]], url
     results: list[RowResult] = []
     t_run = time.monotonic()
     emit({"event": "run_start", "rows": len(rows), "level": LEVEL})
+    from ..recipes import web
+
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
-        page = browser.new_page()
+        if web.profile_dir().exists():           # the user's session (signed in once in Edith's window)
+            browser = p.chromium.launch_persistent_context(str(web.profile_dir()), headless=headless)
+            page = browser.new_page()
+        else:
+            browser = p.chromium.launch(headless=headless)
+            page = browser.new_page()
         page.set_default_timeout(timeout_ms)
         try:
             for index, row in rows:
@@ -82,6 +88,13 @@ def run_rows(plan: dict, code: dict[str, str], rows: list[tuple[int, dict]], url
                     results.append(RowResult(index, False, skipped=reason))
                     continue
                 result = run_one(page, plan, blocks, index, row, url, emit)
+                try:
+                    if web.needs_user(page.inner_text("body", timeout=1000)):
+                        raise web.NeedsUser(url)     # never a CAPTCHA or a 2-step check: the user does it
+                except web.NeedsUser:
+                    raise
+                except Exception:
+                    pass
                 results.append(result)
                 if not result.ok and stop_on_error:
                     break

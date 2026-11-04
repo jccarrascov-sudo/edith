@@ -1,0 +1,21 @@
+screen,question,ok,seconds,cost_usd,sent,answer
+error,¿qué error salió en la pantalla?,True,4.4,0.00277,Enviado: 1 captura · $0.0028,"Te salió esto hace un par de minutos:  ``` Python 3.12 — Traceback (most recent call last): File ""main.py"", line 42, in load KeyError: 'cust"
+chart,¿qué trimestre tuvo más ventas en la gráfica que vi?,True,3.5,0.00274,Enviado: 1 captura · $0.0027,"El Q2, con 340 ventas — fue el más alto de la gráfica de 2026."
+table,¿cuántos cuadernos quedaban en la tabla que se veía?,True,5.2,0.00284,Enviado: 1 captura · $0.0028,Quedaban 18 cuadernos.
+receipt,¿cuál era el total del recibo que se veía?,True,3.7,0.003,Enviado: 1 captura · $0.0030,"Era **TOTAL S/ 10.00**, de Bodega San Juan."
+slide,¿de qué tema era la diapositiva que se veía?,True,5.7,0.00295,Enviado: 1 captura · $0.0029,"Era del Capítulo 4, **La fotosíntesis** — la que dice que ocurre en los cloroplastos."
+chat,¿qué me pidió mi mamá en el mensaje que se veía?,True,6.5,0.00318,Enviado: 1 captura · $0.0032,Te pidió que no te olvidaras de comprar huevos.
+calendar,¿a qué hora era el dentista según el calendario que vi?,True,2.9,0.00253,Enviado: 1 captura · $0.0025,"Era a las 10:00, el jueves 19."
+code,¿qué función se veía en el código de la pantalla?,True,4.7,0.00314,Enviado: 1 captura · $0.0031,Se veía la función `area(r)`:  ```python def area(r):     return 3.14159 * r ** 2 print(area(4)) ```  Calcula el área de un círculo.
+weather,¿qué temperatura mostraba la pantalla del clima?,True,4.4,0.00269,Enviado: 1 captura · $0.0027,"Mostraba 19 °C en Lima, con cielo nublado."
+flight,¿en qué puerta era el embarque que vi?,True,4.3,0.00257,Enviado: 1 captura · $0.0026,"Era la puerta 12, del vuelo LA2041 de Lima a Cusco."
+grade,¿qué nota saqué en el parcial según la pantalla?,True,6.4,0.00213,Enviado: 1 captura · $0.0021,Sacaste 12 en el parcial de Matemática II.
+password,¿cómo se llamaba la red wifi que vi?,True,4.0,0.00313,Enviado: 1 captura · $0.0031,Se llamaba **Biblioteca-PUCP**.
+bars2,¿qué día estudié más según la gráfica que vi?,True,4.4,0.0035,Enviado: 1 captura · $0.0035,"El martes, con 5 horas."
+menu,¿cuál era el plato de fondo del menú que vi?,True,2.9,0.0022,Enviado: 1 captura · $0.0022,Era Ají de gallina.
+address,¿a qué avenida iba el envío que se veía?,True,5.3,0.00291,Enviado: 1 captura · $0.0029,"Iba a la Av. Universitaria 1801, en San Miguel, Lima 15088."
+bank,¿cuánto saldo disponible mostraba la pantalla?,True,4.8,0.00229,Enviado: 1 captura · $0.0023,"Era **S/ 1,284.50** en la cuenta de ahorros."
+todo,¿a quién tenía que llamar según mis pendientes que vi?,True,4.3,0.00289,Enviado: 1 captura · $0.0029,"A Rosa, era uno de tus pendientes."
+book,¿qué libro mostraba la pantalla de la biblioteca?,True,4.4,0.0029,Enviado: 1 captura · $0.0029,"Era *Cien años de soledad*, con devolución el 27/11/2026."
+score,¿cómo quedó el partido que se veía?,True,3.6,0.0021,Enviado: 1 captura · $0.0021,"Quedó 2 a 1 a favor de Perú contra Chile, era la Final de la Copa."
+battery,¿qué porcentaje de batería se veía?,True,6.0,0.00268,Enviado: 1 captura · $0.0027,"23%, con el ahorro de energía activado."

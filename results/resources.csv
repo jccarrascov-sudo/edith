@@ -1,0 +1,7 @@
+engine,run,ttft_s,total_s,vram_avg_mib,vram_peak_mib,ram_avg_mib,ram_peak_mib,gpu_util_avg_pct,gpu_util_peak_pct,load_s
+local Muse Glimmer 30B (2-bit),1,119.45,139.75,0,0,0,0,0,0,0.0
+local Muse Glimmer 30B (2-bit),2,1.12,18.22,0,0,0,0,0,0,
+local Muse Glimmer 30B (2-bit),3,2.08,31.81,0,0,0,0,0,0,
+cloud Muse Spark,1,1.16,1.59,0,0,,,,,
+cloud Muse Spark,2,2.06,2.39,0,0,,,,,
+cloud Muse Spark,3,2.39,2.66,0,0,,,,,

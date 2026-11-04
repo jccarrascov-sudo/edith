@@ -34,6 +34,7 @@ class Recipe:
     manual_s: float = 0.0         # how long the user took by hand
     created: float = 0.0
     runs: list[dict] = field(default_factory=list)  # {"ts", "keys", "seconds", "ok", "applied"}
+    extra: dict = field(default_factory=dict)       # forms: window title, fields, submit button, points
 
     @property
     def folder_name(self) -> str:
@@ -86,6 +87,7 @@ class RecipeStore:
         return False
 
     def record_run(self, r: Recipe, run: dict) -> None:
+        run = {"level": r.level, **run}                 # the level it ran at (a recipe can move later)
         r.runs = (r.runs + [run])[-50:]
         self.save(r)
 

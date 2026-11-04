@@ -1,0 +1,11 @@
+question,where,seconds,cost_usd,answer
+"hola Edith, ¿cómo estás?",cloud,1.9,0.0008,"Hola, muy bien, gracias por preguntar. ¿Cómo estás tú?"
+¿qué dijo el profe del examen hace unos minutos?,cloud,3.4,0.00263,"Dijo que el examen es el viernes 13 de noviembre, y que entra recursión y memoización, nada de grafos todavía."
+¿cuál es la tarea y para cuándo es?,cloud,4.6,0.00236,"Implementar Fibonacci con memoización, para el lunes. Tienes que subirla al aula virtual antes de las ocho de la noche."
+¿qué estaba en la diapositiva de la clase?,cloud,5.8,0.0032,"Era la de Clase 7 - Algoritmos, sobre recursión y memoización.  Ponía: - Caso base y caso recursivo - Memoización: guardar resultados ya calculados - Examen: vi"
+¿qué es la memoización?,cloud,3.7,0.00133,"Es una técnica para no repetir cálculos, guardas el resultado de una función para esos mismos datos y la próxima vez lo reutilizas directamente."
+resume la clase en dos líneas,cloud,2.8,0.00201,"Vieron recursión (caso base y caso recursivo) y memoización para no repetir cálculos guardando resultados. El examen es el viernes 13 de noviembre sobre eso, y "
+¿qué hice después de la clase?,cloud,4.8,0.00334,Después de la clase abriste el Excel de invoices y luego el Bloc de notas de Apuntes.
+¿qué no entra en el examen?,cloud,4.9,0.00232,"Los grafos, dijo que todavía no entran."
+¿a qué hora hay que subir la tarea?,cloud,11.9,0.00299,Antes de las ocho de la noche.
+¿cómo automatizo llenar facturas desde Excel?,cloud,9.4,0.00639,"Eso sí te lo puedo automatizar, es justo lo que hago.  Con tu `invoices.xlsx` con Client, Tax ID, Date, Amount:  1. Llena UNA factura a mano en tu formulario, c"

@@ -147,3 +147,37 @@ flowchart LR
 The network level never runs unverified: its spec is derived from a page-level run that
 already passed, checked for data constants, verified by equivalence on its own, and used only
 for allow-listed sites. A changed request is caught by the dry proof before any row is sent.
+
+## Recipes: the execution cascade (Nov 3-4)
+
+```
+src/edith/recipes/
+  learn.py     find the demonstration (Windows' recent files), the row and key column (no model),
+               compile with Muse Spark at levels 1 -> 2, verify on copies (2 corrections per level)
+  sandbox.py   AST whitelist + `python -I` with an audit hook; level 0 (free mode), 1-2 by pipe,
+               4-5 on the hidden desktop through job/result files; stop_all() for Ctrl+Alt+Q
+  docs.py      Excel/Word reading, the comparison that defines "the same result" (paragraphs,
+               cells, bold/italic, file name)
+  run.py       match a request to a recipe and rows (no model), proof in parallel, preview,
+               apply with backups, undo; dispatches Word / form / web recipes
+  store.py     state/recipes/<id>/: recipe.json, program.py, proof/, versions/, runs/
+  lessons.py   (a) preview edit, (b) "corrige:", (c) edit after apply, (d) own way after Esc ->
+               the program changes and is re-verified; versions for Discard
+  escalate.py  a row failing twice -> Muse Spark replans -> next level -> one-line stop
+  forms.py     desktop forms: demo from the memory's field values, levels 4 (UIA) and 5 (SAM 3.1
+               points), dry-run verification (the submit button is never pressed), escalation
+  desktop.py   the hidden Windows desktop "EdithWork" (CreateDesktop / CreateProcess lpDesktop)
+  uihelp.py    the `ui` object a level-4/5 program gets; PrintWindow capture for SAM
+  web.py       level 3: the workshop's verified machines (network = the site's API, page =
+               headless Playwright with Edith's profile), tokens in the Credential Manager,
+               CAPTCHA/2-step left to the user
+  detect.py    "¿Guardo esto como receta?": two documents from one template, a form filled twice
+  free.py      free mode: files (programs on copies) and desktop (one UIA action at a time, dry),
+               25 steps / 3 min, induction of a recipe after the user applies
+```
+
+Order of preference when compiling: 1 direct data -> 2 the app's API (COM) -> 3 the web (API, then
+headless browser) -> 4 UI Automation on the hidden desktop -> 5 SAM 3.1 points. A Word-from-Excel
+task starts at 1; a desktop form at 4 (the app keeps its data to itself); a web form is the
+workshop's machine at 3. Nothing enters the recipe memory without passing its verification, and
+the proof (the user's own row must still give the user's own result) runs again before every use.

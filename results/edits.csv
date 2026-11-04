@@ -1,0 +1,11 @@
+scenario,request,ok,seconds_to_preview,cost_usd,proposal
+1,pon en mis notas cuándo es el examen final,True,4.4,0.00279,- Examen final: martes 1 de diciembre
+2,anota la tarea de lectura en mis apuntes,True,4.9,0.00314,- Leer capítulos 3 y 4 del libro de Stewart
+3,responde a este correo con el monto que vi,True,11.0,0.00427,"Hola Ana, /  / El monto de la factura de octubre es S/ 1,250.50. /  / Saludos,"
+4,escribe en mis notas el cambio de la reunión,True,3.5,0.00229,- Reunión con el cliente se movió al jueves a las 3 pm.
+5,pon el código de Classroom en mis notas,True,4.7,0.0029,Código Classroom: k7x2mq
+6,anota la dirección de la fiesta,True,4.6,0.00316,"Dirección de la fiesta: Calle Los Pinos 345, Surco."
+7,pon en mis apuntes la extensión del ensayo,True,3.5,0.00235,- Ensayo: entre 1500 y 2000 palabras
+8,anota el error que salió,True,3.7,0.00258,- Error en el servidor: timeout al conectar con la base de datos postgres en el puerto 5432.
+9,responde a Luis confirmando el número de cuenta que vi,True,9.9,0.00373,"Sí, me llegó, tu cuenta es 191-2345678-0-12."
+10,pon en mis apuntes lo que dijeron de la mitocondria,True,4.2,0.00272,- La mitocondria produce ATP.

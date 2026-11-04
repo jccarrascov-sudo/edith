@@ -118,5 +118,53 @@ class LearnLessonTests(unittest.TestCase):
         self.assertEqual(ls.all(), [])
 
 
+class AfterTheFactTests(unittest.TestCase):
+    """(c) the user edits what Edith applied; (d) the user discards and does it their own way."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.files = make_letters.make(self.dir, hand=True)
+
+    def test_c_an_edit_after_apply_is_caught(self):
+        import threading
+        import time as _t
+
+        made = Path(tempfile.mkdtemp()) / self.files["result"].name
+        made.write_bytes(self.files["result"].read_bytes())
+        box = []
+        t = threading.Thread(target=lambda: box.append(
+            lessons.watch_applied(self.files["result"], made, 0.2, poll_s=0.2)))
+        t.start()
+        _t.sleep(0.5)
+        text = "\n".join(docs.shape(made).paragraphs).replace("Best regards,", "Kind regards,")
+        lessons.apply_edit(made, text, self.files["result"])
+        t.join(15)
+        self.assertIsNotNone(box[0])
+        self.assertIn("Kind regards,", docs.shape(box[0]).paragraphs)
+
+    def test_c_nothing_changed_or_undone_learns_nothing(self):
+        made = Path(tempfile.mkdtemp()) / self.files["result"].name
+        made.write_bytes(self.files["result"].read_bytes())
+        self.assertIsNone(lessons.watch_applied(self.files["result"], made, 0.01, poll_s=0.2))
+        self.files["result"].unlink()
+        self.assertIsNone(lessons.watch_applied(self.files["result"], made, 0.01, poll_s=0.2))
+
+    def test_d_the_users_own_document_for_that_row_is_caught(self):
+        import threading
+        import time as _t
+
+        _h, rows = docs.sheet_rows(self.files["sheet"])
+        box = []
+        t = threading.Thread(target=lambda: box.append(lessons.watch_rejected(
+            self.dir, "Panadería Ñandú", self.files["template"], _t.time(), 0.2, poll_s=0.2)))
+        t.start()
+        _t.sleep(0.5)
+        make_letters.hand_letter(rows[0], self.dir)              # another client: not it
+        own = make_letters.hand_letter(rows[4], self.dir)        # Panadería Ñandú, their own way
+        t.join(15)
+        self.assertIsNotNone(box[0])
+        self.assertEqual(box[0].name, own.name)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -114,6 +114,17 @@ def find_demo(minutes: float = 30, recent: list[tuple[Path, float]] | None = Non
     return Demo(sheet, template, result, manual if manual < 3600 else 0.0)
 
 
+def demo_from(template: Path, result: Path, minutes: float = 12 * 60) -> Demo:
+    """A demonstration whose template and document are known (a suggestion): the sheet is the
+    most recent one opened, or the newest next to the document."""
+    sheets = [(p, t) for p, t in recent_files(minutes) if p.suffix.lower() == ".xlsx" and not p.name.startswith("~$")]
+    if not sheets:
+        sheets = [(p, p.stat().st_mtime) for p in result.parent.glob("*.xlsx") if not p.name.startswith("~$")]
+    if not sheets:
+        raise CannotLearn("learn_no_sheet")
+    return Demo(max(sheets, key=lambda s: s[1])[0], Path(template), Path(result))
+
+
 def value_forms(v) -> set[str]:
     """How a cell's value may look once typed in a document."""
     if v is None or str(v).strip() == "":
@@ -133,6 +144,23 @@ def value_forms(v) -> set[str]:
     return {docs.squash(str(v))}
 
 
+def _found(v, text: str) -> int:
+    """How much a cell's value counts as found in the (folded) document: 2 for text, 1 for a number;
+    a short number only as a whole token ("12" is not found inside the code "20219904")."""
+    import re as _re
+
+    for f in value_forms(v):
+        ff = docs.fold(f)
+        if not ff:
+            continue
+        if isinstance(v, (int, float)) and len(ff) <= 3:
+            if _re.search(rf"(?<![\w.,]){_re.escape(ff)}(?![\w]|[.,]\d)", text):
+                return 1
+        elif ff in text:
+            return 2 if isinstance(v, str) else 1
+    return 0
+
+
 def demo_row(sheet: Path, result: Path) -> tuple[list[str], list[dict], dict, str]:
     """(header, rows, the row the user used, the key column), without a model: the row with
     the most values in the user's document; the key = a text column whose value is in the
@@ -141,7 +169,7 @@ def demo_row(sheet: Path, result: Path) -> tuple[list[str], list[dict], dict, st
     text = docs.fold(docs.shape(result).text())
     best, best_n = None, 0
     for r in rows:
-        n = sum(1 for v in r.values() for f in value_forms(v) if f and docs.fold(f) in text)
+        n = sum(_found(v, text) for v in r.values())
         if n > best_n:
             best, best_n = r, n
     if best is None:

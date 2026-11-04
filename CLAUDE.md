@@ -92,6 +92,11 @@ report; revert what breaks demo-check; unfinished work stays behind an OFF flag 
 Status: stage A done (src/edith/recipes/, scripts/demo_check.py, demo/make_letters.py); P2 done
 (recipes/lessons.py: triggers a and b; lessons live in the recipe's program, re-verified; c and d not built);
 P3 done (recipes/escalate.py). pywin32 ignores keyword args to COM methods: level-2 programs use positional ones.
+P4 done: recipes/forms.py + desktop.py (hidden desktop "EdithWork") + uihelp.py (levels 4-5), detect.py;
+demo app demo/desktop/northwind.ps1 (PowerShell WinForms: python.exe is excluded from the memory).
+Then (user, Nov 4 01:15: "hazlo"): level 3 (recipes/web.py), free mode (recipes/free.py), lessons (c)/(d)
+((d) off by default), escalation for forms, Activity per-run metrics, benchmarks (coverage 20 tasks,
+30 invoices five ways, 2-bit vs 3-bit). Evidence in results/*.csv.
 
 ## Product (the video revolves around this; no command is typed in the video)
 A minimal desktop assistant with a local memory of the last 10 minutes.

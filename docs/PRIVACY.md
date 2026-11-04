@@ -49,3 +49,31 @@ connection, nothing is sent and the local model answers ("Answered locally").
 The runtime check is [NETWORK_AUDIT.md](NETWORK_AUDIT.md) (`scripts/network_audit.py`): 90 s of
 real recording opened 0 connections outside the PC; a question opened exactly one, to
 `api.meta.ai`.
+
+## Recipes, lessons and free mode
+
+- **What a recipe sends to the cloud.** Compiling ("learn this"), turning a correction into a
+  lesson, replanning a recipe that failed, and free mode send Muse Spark the text of the files the
+  task uses (the sheet's header and a few rows, the template's and the result's paragraphs) or
+  the names and values of a form's fields. Level 5 also sends one screenshot of the app's window
+  (taken on Edith's hidden desktop, never of the user's screen) to SAM 3.1. **Running** a recipe
+  calls no model at all.
+- **Where programs run.** In a separate `python -I` process: an AST whitelist before running
+  (document libraries only; no os/subprocess/network/eval), then an audit hook that refuses
+  writing, renaming or deleting outside the run's own folder, reading outside the recipe's
+  folders, starting programs and any network; API keys are removed from its environment;
+  timeouts of 30 s (levels 1-3) and 3 min (levels 4-5). **Ctrl+Alt+Q** kills it at once.
+- **Copies first, the user decides.** Every run works on copies or as a dry run (a form's final
+  button is not pressed) and shows a preview; Enter applies, Esc discards, Undo restores (a
+  backup is kept before anything of the user's is overwritten). A site's records cannot be taken
+  back, so the panel says so before sending.
+- **Nothing on the user's screen.** Levels 4-5 and free mode in desktop apps run on a separate
+  Windows desktop ("EdithWork"): no mouse moves, no focus taken, no window shown.
+- **Credentials.** Tokens for a site live in the Windows Credential Manager (`Edith/<site>`), never
+  in files or in the repository. The headless browser uses Edith's own profile (`state/web-profile`),
+  where the user signs in once. A CAPTCHA or a two-step check is never attempted: the run stops
+  and the user does it in a visible window.
+- **Kept on this PC** (`state/`, git-ignored): recipes with their program and proof, lessons
+  (one line each, with the previous version kept for Discard). Both are listed in Options ->
+  Recipes, where each can be deleted. "Delete everything now" keeps them, like the verified
+  machines (they are procedures the user confirmed, not captured screen data).

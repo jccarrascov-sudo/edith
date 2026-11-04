@@ -168,6 +168,24 @@ class Card(QWidget):
         QToolTip.showText(event.globalPosition().toPoint(), self.tip(ts, value), self)
 
 
+def recipe_runs(cfg: Config, limit: int = 6) -> list[dict]:
+    """The last recipe runs: name, level, seconds, success, lessons applied, time saved vs by hand."""
+    from ..recipes.lessons import LessonStore
+    from ..recipes.store import RecipeStore
+
+    store = RecipeStore(cfg)
+    taught = LessonStore(store)
+    out = []
+    for r in store.all():
+        n_lessons = len(taught.of(r.id))
+        for run in r.runs:
+            n = max(1, len(run.get("keys", [])))
+            saved = r.manual_s * n - float(run.get("seconds", 0)) if r.manual_s else None
+            out.append({"ts": run.get("ts", 0), "name": r.name, "level": run.get("level", r.level), "seconds": float(run.get("seconds", 0)),
+                        "ok": bool(run.get("ok")), "lessons": n_lessons, "rows": n, "saved_s": saved})
+    return sorted(out, key=lambda x: -x["ts"])[:limit]
+
+
 class StatsView(QWidget):
     """A separate floating window with one card per series that has data. Esc or clicking
     elsewhere closes it."""
@@ -205,6 +223,16 @@ class StatsView(QWidget):
         layout.setSpacing(0)
         for i, card in enumerate((self.activity, self.ram, self.vram, self.latency, self.cost)):
             layout.addWidget(card, i // 3, i % 3)
+        from PySide6.QtWidgets import QLabel
+
+        from .fonts import font
+
+        self.es = es
+        self.runs = QLabel()                      # the last recipe runs (only when there are some)
+        self.runs.setFont(font(12))
+        self.runs.setTextFormat(Qt.RichText)
+        self.runs.setContentsMargins(16, 10, 16, 6)
+        layout.addWidget(self.runs, 2, 0, 1, 3)
         self.timer = QTimer(self, interval=SAMPLE_S * 1000, timeout=self.refresh)
         theme.changed.connect(self.update)
 
@@ -219,7 +247,29 @@ class StatsView(QWidget):
         self.latency.set_series(self.ledger.latencies())
         daily = self.ledger.daily(30)
         self.cost.set_series(daily if any(v for _, v in daily) else [])
+        self._render_runs()
         self.adjustSize()
+
+    def _render_runs(self) -> None:
+        import html
+
+        rows = recipe_runs(self.cfg)
+        self.runs.setVisible(bool(rows))
+        if not rows:
+            return
+        pal = self.theme.palette
+        es = self.es
+        head = (["Receta", "Nivel", "Tiempo", "Éxito", "Lecciones", "Ahorrado"] if es else
+                ["Recipe", "Level", "Time", "Success", "Lessons", "Saved"])
+        cells = "".join(f'<td style="color:{pal.muted}; padding:2px 10px 4px 0;">{h}</td>' for h in head)
+        lines = [f"<tr>{cells}</tr>"]
+        for r in rows:
+            saved = "—" if r["saved_s"] is None else (f"{r['saved_s'] / 60:.1f} min" if r["saved_s"] >= 60 else f"{r['saved_s']:.0f} s")
+            vals = [html.escape(r["name"])[:28], str(r["level"]), f"{r['seconds']:.1f} s", "✓" if r["ok"] else "✗",
+                    str(r["lessons"]), saved]
+            lines.append("<tr>" + "".join(f'<td style="color:{pal.text}; padding:2px 10px 2px 0;">{v}</td>' for v in vals)
+                         + "</tr>")
+        self.runs.setText('<table cellspacing="0" cellpadding="0">' + "".join(lines) + "</table>")
 
     def open_near(self, anchor) -> None:
         self.refresh()

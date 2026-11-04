@@ -487,3 +487,42 @@ Saludos,". 196 tests pass.
 - Tests: 4 new (replan after two failures with the real error, failed replan -> level 2 for
   real through Word COM, no level left -> one line and the program untouched, rows that work never
   escalate): 219 pass.
+
+## Priority 4 (Nov 4): levels 4 and 5, and noticing a task done twice
+- `recipes/detect.py`: two .docx saved today from the same template (each close to an older
+  document) or the same form submitted twice -> one line in the panel with Yes/No (No is
+  remembered; Options -> Suggest recipes). Yes compiles it like "learn this".
+- `recipes/desktop.py`: a separate Windows desktop "EdithWork" (CreateDesktop); the app and the
+  recipe's process start there (CreateProcess with lpDesktop), so UI Automation sees the app and
+  the user sees nothing. First probe: a UIA script on that desktop set "Client" and invoked Save
+  in the WinForms demo app.
+- `recipes/uihelp.py`: the `ui` object (level 4: set/read/invoke by accessible name, one walk of
+  the control tree cached: 16 s -> 8.8 s per run; level 5: type/click at points through window
+  messages). Dry runs stop at the submit button with `Submitted(BaseException)` (a program's own
+  `except Exception` cannot swallow it) and record the fields. The sandbox lets level 4-5 use
+  ctypes/winreg events (comtypes needs them) while the program still cannot import them, and
+  refuses any attribute starting with "_" (no reaching inside `ui`).
+- `recipes/forms.py`: the demo from the memory's field values + the Excel row; the app's command
+  line from WMI; its data files = files named in that command line (copied for dry runs, backed up
+  before a real run, restored by Undo). Compile at level 4, then 5 (SAM 3.1: at 1x "text box" found
+  nothing; at 2x "white rectangle" found all 5 fields and the button; Muse Spark labels the boxes).
+  Live: level 4 verified on the first attempt (dry preview 13.6 s, real 17.5 s); level 5 verified on
+  the first attempt after three fixes found live: the capture took a helper window (now the largest
+  titled one), `GetWindowText` cannot read another process's edit box (WM_GETTEXT), and WM_CHAR
+  through pywin32 turned "Ñandú" into "?and?" (SendMessageW).
+- The letter recipe and the form recipe share invoices.xlsx: when both fit, Edith asks which,
+  unless the request names one.
+- Nov 4 morning, all checks at once: demo-check 3/5. Both failures were the parallel run (every
+  process used the one hidden desktop "EdithWork", so a run read another benchmark's form). Alone:
+  4/5, and the failure was real: at level 5 vision gave "Client" and "Tax ID" the same box. Worse,
+  found while writing its test: the level-5 dry run read the fields back through the SAME points
+  vision labelled, so two swapped fields typed crossed, read back crossed and passed — the real run
+  would have saved the Tax ID as the client. Fixed: the dry run records each value under the label
+  the app shows left of its box (vision's name only when there is none); `locate` refuses two names
+  on one box; a failed level 5 locates once more before giving up. Test: swapped points -> the
+  first round fails, the second locate compiles.
+- Demo-check 16 steps: PENDING_P4.
+- Tests: 9 new (detection x3, forms x5 with the real app on the hidden desktop, two recipes on one
+  sheet): 233 pass.
+- Not built: level 3 (web API / headless browser with the user's session), free mode (stage D),
+  lessons (c)/(d), escalation for forms.

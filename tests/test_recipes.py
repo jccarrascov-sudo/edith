@@ -181,6 +181,30 @@ class RunTests(unittest.TestCase):
         self.assertIsNone(run.match("¿cuánto pagó Lazy Comet Coffee Bar?", rs))
         self.assertIsNone(run.match("hola edith", rs))
 
+    def test_two_recipes_on_the_same_sheet_ask_which_unless_named(self):
+        from dataclasses import replace
+
+        form = replace(self.recipe, id="form", name="Northwind Desktop", kind="excel_to_form",
+                       extra={"title": "Northwind Desktop - New invoice"})
+        rs = [self.recipe, form]
+        m = run.match("para Panadería Ñandú", rs)
+        self.assertEqual(m.recipes, ["Payment reminder", "Northwind Desktop"])
+        self.assertEqual(run.match("la carta para Panadería Ñandú", rs).recipe.id, self.recipe.id)
+        self.assertEqual(run.match("en Northwind para Panadería Ñandú", rs).recipe.id, "form")
+
+    def test_activity_lists_each_run_with_level_time_and_time_saved(self):
+        from edith.ui.stats import recipe_runs
+
+        runner = run.Runner(self.store)
+        runner.apply(runner.prepare(run.match("para Panadería Ñandú", [self.recipe])))
+        cfg = load_config()
+        cfg.root = self.store.dir.parent.parent
+        rows = recipe_runs(cfg)
+        self.assertEqual(len(rows), 1)
+        r = rows[0]
+        self.assertEqual((r["name"], r["level"], r["ok"], r["lessons"], r["rows"]), ("Payment reminder", 1, True, 0, 1))
+        self.assertAlmostEqual(r["saved_s"], 80 - r["seconds"], places=1)     # the demo took 80 s by hand
+
     def test_prepare_apply_undo(self):
         runner = run.Runner(self.store)
         p = runner.prepare(run.match("haz lo mismo para Panadería Ñandú", [self.recipe]))

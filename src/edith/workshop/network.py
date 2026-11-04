@@ -195,8 +195,13 @@ def _send(opener, plan, spec, origin, index, row, emit, timeout_s) -> runner.Row
                 hidden = parser.values
         body, filled = body_for(plan, spec, row, hidden)
         data = urllib.parse.urlencode(body).encode("utf-8")
-        req = urllib.request.Request(origin + spec["action"], data=data, method="POST",
-                                     headers={"Content-Type": spec["content_type"]})
+        headers = {"Content-Type": spec["content_type"]}
+        from ..recipes import web
+
+        token = web.token_for(web.site(origin))            # Windows Credential Manager, never a file
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        req = urllib.request.Request(origin + spec["action"], data=data, method="POST", headers=headers)
         try:
             with opener.open(req, timeout=timeout_s) as r:
                 status, location = r.status, r.headers.get("Location") or ""

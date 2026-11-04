@@ -1,0 +1,31 @@
+line,spoken,label,filter,filter_hit
+El examen parcial es el jueves 19 de noviembre,True,exam,deadline,True
+"Esto entra en el examen, apúntenlo",True,exam,exam,True
+La tarea de álgebra es para el lunes,True,task,task,True
+Entreguen el informe antes del viernes 20,True,deadline,deadline,True
+Tengo cita con el dentista el martes a las 10,True,deadline,deadline,True
+Recuerden que la práctica calificada es mañana,True,exam,exam,True
+Hay que pagar la cuota de la universidad hasta el 30/11,False,deadline,deadline,True
+Proyecto final: fecha límite 05/12/2026,False,deadline,deadline,True
+Reunión de grupo el miércoles a las 6 pm,True,deadline,deadline,True
+Para el jueves hagan los ejercicios 1 al 10,True,task,task,True
+El quiz incluye los capítulos 2 y 3,True,exam,exam,True
+La entrevista de prácticas es el 25 de noviembre,True,deadline,deadline,True
+No olviden traer la calculadora,True,exam,exam,True
+Vence el recibo de luz el 28/11,False,deadline,deadline,True
+Tarea: resumen de la lectura para el martes,False,task,task,True
+Hoy vamos a ver derivadas parciales,True,,,True
+"Buenos días, ¿cómo están?",True,,,True
+La fotosíntesis ocurre en los cloroplastos,True,,,True
+Bandeja de entrada (12),False,,,True
+Lunes 16 de noviembre de 2026,False,,,True
+Me gustó mucho la película del sábado,True,,deadline,False
+Abran el libro en la página 45,True,,,True
+El clima en Lima: 19 °C,False,,,True
+Archivo Editar Ver Insertar Formato,False,,,True
+La mitocondria produce ATP,True,,,True
+Ayer jugamos fútbol hasta tarde,True,,,True
+Total a pagar S/ 14.00,False,,,True
+Pregunten si tienen dudas,True,,,True
+Capítulo 4: la célula,False,,,True
+El viernes es feriado,True,,,True

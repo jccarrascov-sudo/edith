@@ -61,6 +61,12 @@ def normalize(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.split("\n")).strip()
 
 
+def same_text(written: str, field: str) -> bool:
+    """Is `written` in the field? Compared without line breaks and spacing: a contenteditable
+    (Gmail's body) turns each pasted line into a paragraph, so the field reads blank lines more."""
+    return " ".join(normalize(written).split()) in " ".join(normalize(field).split())
+
+
 def read_text(control) -> str | None:
     import uiautomation as auto
 
@@ -69,9 +75,16 @@ def read_text(control) -> str | None:
             return None
         tp = control.GetPattern(auto.PatternId.TextPattern)
         if tp:
-            return tp.DocumentRange.GetText(-1) or ""
-        vp = control.GetPattern(auto.PatternId.ValuePattern)
-        return (vp.Value or "") if vp else None
+            text = tp.DocumentRange.GetText(-1) or ""
+        else:
+            vp = control.GetPattern(auto.PatternId.ValuePattern)
+            if not vp:
+                return None
+            text = vp.Value or ""
+        # An empty contenteditable (Gmail's message body) reads as its own label.
+        name = getattr(control, "Name", "")
+        name = name.strip() if isinstance(name, str) else ""
+        return "" if name and normalize(text) == name else text
     except Exception:
         log.debug("could not read the target's text", exc_info=True)
         return None
@@ -190,7 +203,7 @@ class Typist:
             _keys(VK_CONTROL, VK_V)
             _pump(0.5)                                   # the app reads the clipboard now
             after = read_text(t.control)
-        if after is None or normalize(text) not in normalize(after):
+        if after is None or not same_text(text, after):
             return False, "not_written"
         self.last = Applied(t, before, after, time.time())
         return True, ""

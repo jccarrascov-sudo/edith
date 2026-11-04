@@ -23,7 +23,13 @@ EDIT = re.compile(
     r"|^\s*(reply|answer|respond)\b"
     r"|\b(pasa|pon|ponle|agrega|a[nñ]ade|escribe|copia|anota|apunta|responde|contesta|completa|redacta|inserta)\b.*"
     r"\b(apuntes|notas?|correo|mail|mensaje|documento|aqu[ií]|esto|este|esta|campo|respuesta)\b"
-    r"|^\s*(responde|contesta)\b", re.IGNORECASE)
+    r"|^\s*(responde|contesta)\b"
+    # "send Juan an email saying it's a test", "mándale un correo a Juan diciéndole que...": Edith
+    # writes it into the open compose; the user sends it.
+    r"|\b(send|write|email|mail|message|text)\b.*\b(email|e-?mail|mail|message|note)\b"
+    r"|\b(m[aá]nda(le|les|me)?|env[ií]a(le|les|me)?|escr[ií]be(le|les|me)?)\b.*\b(correo|mail|e-?mail|mensaje)\b"
+    r"|\b(un|una|el|otro)\s+(correo|mail|e-?mail|mensaje)\s+(a|para)\b|\b(an?|the)\s+(e-?mail|mail|message)\s+to\b",
+    re.IGNORECASE)
 
 EDIT_PROMPT = """\
 You are Edith, a desktop assistant with a short memory of the user's computer. The user asks you
@@ -43,6 +49,9 @@ moment in the memory the content comes from", "source": "a few words: where it c
   notes). Never mention Edith, a memory, a screen, or "what I saw"; do not echo the request's
   wording; just state the facts. A reply to "Hi! Can you send me the amount?" from Ana is like
   "Hi Ana,\\n\\nThe amount is PEN 1,250.50.\\n\\nBest,"; notes are like "- Exam: Friday 13".
+- What the user dictates in the request ("tell Juan it's a test and say hi") is content too:
+  write it as the user would, and set "source_time" to null when nothing came from the memory.
+  A new email's body gets a short greeting and closing in the user's language.
 - If the memory does not contain what is asked, reply {"error": "what is missing, briefly"}."""
 
 

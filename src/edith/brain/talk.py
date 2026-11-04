@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import Callable
 
+from .ask import CANNOT_ACT
+
 NEED_MEMORY = "[[MEMORY]]"
 
 # Clear signs that the question is about the user's own recent screen, audio or actions.
@@ -41,7 +43,7 @@ unless asked, no emojis, no talk about being an AI.
 You can also remember what happened on the user's computer in the last minutes (screen, audio,
 what they did) and today's important details, but you were NOT given any of it now.
 If answering would need that, i.e. the user asks about something they saw, heard, read or did,
-reply exactly with {token} and nothing else. Otherwise just answer."""
+reply exactly with {token} and nothing else. Otherwise just answer.""" + CANNOT_ACT
 
 
 # A doubt about what is on the screen right now: "what does this error mean?", "explain this".
@@ -69,7 +71,7 @@ tailored to what you see (name their file, their form, their columns):
   (how many rows, totals, skipped rows); 4) Enter sends, Esc cancels. If the form changes
   later, Edith repairs itself or asks to be shown once more.
 - If what they want is not that kind of task, say so honestly and suggest the closest thing.
-No lists longer than four steps, no jargon, no talk about models or tokens."""
+No lists longer than four steps, no jargon, no talk about models or tokens.""" + CANNOT_ACT
 
 
 def kind(question: str) -> str:

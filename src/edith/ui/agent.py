@@ -46,6 +46,9 @@ TEXT = {
         "no_record": "I can't find what your demo saved in the page, so I have nothing to check against. "
                      "Do one by hand, then ask me again.",
         "cant_build": "I couldn't build it ({error}), so I sent nothing.",
+        "cant_act": "I can't do that by myself. I can write it for you: click in the email or the field "
+                    "where it goes, open me and tell me what to write; you check it, press Enter, and send it. "
+                    "I can also repeat a form you filled once from a spreadsheet: \"do the rest\".",
         "ambiguous": "The form changed and I'm not sure where “{column}” goes now: {options}. "
                      "Show me one: fill one by hand, then ask me again.",
         "repaired": "The form changed: “{column}” now goes in “{new}”. I checked it against your demo again.\n",
@@ -159,6 +162,9 @@ TEXT = {
         "no_record": "No encuentro lo que guardó tu demo en la página, así que no tengo con qué comprobar. "
                      "Haz una a mano y vuelve a pedírmelo.",
         "cant_build": "No pude construirla ({error}), así que no envié nada.",
+        "cant_act": "Eso no puedo hacerlo yo sola. Puedo escribirlo por ti: haz clic en el correo o en el campo "
+                    "donde va, ábreme y dime qué escribir; lo revisas, presionas Enter y lo envías tú. "
+                    "También puedo repetir un formulario que llenaste una vez desde un Excel: \"haz el resto\".",
         "ambiguous": "El formulario cambió y no sé dónde va ahora “{column}”: {options}. "
                      "Muéstrame una: llena una a mano y vuelve a pedírmelo.",
         "repaired": "El formulario cambió: “{column}” ahora va en “{new}”. Lo volví a comprobar con tu demo.\n",
@@ -274,6 +280,10 @@ def text(lang: str, key: str, **kw) -> str:
     return TEXT.get(lang, TEXT["en"]).get(key, TEXT["en"][key]).format(**kw)
 
 
+# "pero hazlo", "envíalo", "just do it": an order with nothing Edith can carry out.
+BARE_ORDER = re.compile(r"^\W*((pero|ya|ahora|entonces|por favor|but|just|then|please|ok|vale|s[ií])\W+)*"
+                        r"(h[aá]zlo|env[ií]alo|m[aá]ndalo|h[aá]gal[oa]|do it|send it|go ahead)\W*$", re.IGNORECASE)
+
 UNDO = re.compile(r"^\s*(undo|undo (it|that|the last edit)|deshaz(lo)?|deshacer)\b", re.IGNORECASE)
 
 
@@ -361,7 +371,8 @@ class Agent(QObject):
             return
         from ..brain.edit import is_edit
 
-        target = (self._task if is_task(request) else self._undo if UNDO.search(request)
+        target = (self._cant if BARE_ORDER.match(request) else self._task if is_task(request)
+                  else self._undo if UNDO.search(request)
                   else self._edit if is_edit(request) else self._ask)
         self.footnote.emit("")
         self._set_busy(True)
@@ -387,6 +398,9 @@ class Agent(QObject):
             self.awaiting = False
             self.status.emit("")
             self._set_busy(False)
+
+    def _cant(self, request: str) -> None:
+        self.reply.emit(self.t("cant_act"))
 
     def _ask(self, question: str) -> None:
         self.status.emit(self.t("thinking"))

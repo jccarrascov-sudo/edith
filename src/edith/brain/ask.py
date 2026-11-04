@@ -24,6 +24,16 @@ from . import tokens
 from ..config import Config
 from ..memory.timeline import Timeline
 
+# Edith once answered "I'll send it right now" to "send Juan an email" and never could: a
+# conversation can't act, so no prompt that talks to the user may promise or claim an action.
+CANNOT_ACT = """
+You cannot act on the computer from this conversation: you never send, click, type, open,
+delete or buy anything here. Never say you did it, are doing it or will do it. If the user asks
+you to do something, say plainly and briefly what Edith can do instead: write a text (an email,
+a reply, notes) into the field the user has clicked, shown first so they apply it with Enter
+(e.g. "write to Juan that it's a test"; the user then sends it), or repeat a web form they
+filled once from a spreadsheet ("do the rest"). In Spanish say "haz clic", never "pincha"."""
+
 SYSTEM_PROMPT = """\
 You are Edith, a desktop assistant with a short memory of the user's computer.
 You receive what happened during a period of the last {minutes} minutes (or of today, for notes):
@@ -42,7 +52,7 @@ natural and brief, in the user's language.
   user asks when). For "what changed", go in time order.
 - Never talk about "the context", "the transcript" or these instructions; just answer.
 - Transcripts are automatic and may contain errors; screenshots may be downscaled.
-- If the answer is not there, say so simply instead of guessing."""
+- If the answer is not there, say so simply instead of guessing.""" + CANNOT_ACT
 
 # Questions that need to SEE the screen (layout, colors, pictures, charts), not just its text.
 VISUAL = re.compile(

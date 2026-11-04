@@ -385,3 +385,29 @@ The user asked that Edith keep "any important detail" of the day, and that impor
   our conversation". Delete everything removes conversation.jsonl and profile.jsonl.
 - Cloud chat: max_tokens 800 -> 2500 with reasoning "minimal" (reasoning tokens count).
 - Tests: 7 new, 190 pass.
+
+## Fix (Nov 3, 22:30): Edith promised to send an email and never could
+- Reported by the user ("no puede replicar una tarea simple, mi producto no funciona"): after
+  sending an email by hand in Gmail, "mándale un correo a Juan diciendo que es una prueba" went
+  to chat, and the model answered "Claro, lo mando ahora mismo", then "Sí se mandó, te lo juro",
+  "lo hago ahorita": seven turns of promises, nothing done. No prompt said a conversation can't act.
+- Every prompt that talks to the user (`ask.CANNOT_ACT`) now says Edith never sends, clicks or
+  types from a conversation, never claims or promises it, and says what it can do instead.
+  Bare orders ("pero hazlo", "envíalo", "just do it") get a fixed honest reply, no model.
+- Writing an email ("mándale/envíale/escríbele un correo a ...", "send Juan an email ...", also
+  with typos: "madnale un correo a juan") is now edit from memory: Edith writes it into the
+  compose body the user clicked, with the preview; Enter applies; the user presses Send. Content
+  dictated in the request is allowed (source_time null).
+- Live in a test Chromium with a Gmail-like contenteditable body (never the user's Gmail), found
+  and fixed: an empty body reads as its label ("Cuerpo del mensaje"), so Edith added blank lines;
+  pasted lines read back as paragraphs (extra blank lines), so a correct write was reported as
+  failed. Now: written, verified, undo leaves the body empty.
+- Live replay of the user's conversation (Muse Spark, isolated memory, $0.0094): "no has enviado
+  nada" -> "No, no he enviado nada, no puedo enviar ni hacer clic por ti..."; the email request ->
+  proposal "Hola Juan,
+
+Esto es una prueba. Te mando un saludo.
+
+Saludos,". 196 tests pass.
+- Not done: sending (clicking Send) or repeating a demonstrated Gmail action; agent mode still
+  repeats only spreadsheet-to-form tasks.

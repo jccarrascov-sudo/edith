@@ -596,9 +596,11 @@ def scene_4(ctx):
 
 def scene_5(ctx):
     edith = ctx["edith"]
-    # While a preview waits, Enter applies it (seen live: the "corrige" typed then never went out).
-    # So like a person: keep the letter, notice the currency, then correct it.
-    _preview_then(edith, "haz lo mismo para Golden Spoon Supplies")
+    # The preview shows USD; the person types the correction right over it (Edith treats new text
+    # over a waiting preview as a request about that preview).
+    edith.ask("haz lo mismo para Golden Spoon Supplies")
+    edith.wait_for("Hecho en", "Done in", timeout=60)
+    time.sleep(2.5)
     before = edith.lessons()
     edith.ask("corrige: el monto va con S/ en vez de USD")
     end = time.monotonic() + 90                            # the lesson is in Edith's lessons file
@@ -655,13 +657,19 @@ def scene_7(ctx):
                 field = r
             elif c.ControlTypeName == "ButtonControl":
                 buttons.append(r)
-    if field is None:
-        raise SceneError("the panel's text field was not found")
-    mid = (field.top + field.bottom) // 2
-    row = [b for b in buttons if b.top - 12 <= mid <= b.bottom + 12 and b.left >= field.right - 4]
-    if not row:
-        raise SceneError("the options button was not found")
-    dots = max(row, key=lambda b: b.right)
+    named = [c.BoundingRectangle for h in windows_of(edith.pid)
+             for c, _d in auto.WalkControl(auto.ControlFromHandle(h), includeTop=True, maxDepth=12)
+             if c.Name in ("Opciones", "Options") and c.BoundingRectangle.width() > 0]
+    if named:
+        dots = named[0]
+    else:                                                  # an older Edith without the name: by position
+        if field is None:
+            raise SceneError("the panel's text field was not found")
+        mid = (field.top + field.bottom) // 2
+        row = [b for b in buttons if b.top - 12 <= mid <= b.bottom + 12 and b.left >= field.right - 4]
+        if not row:
+            raise SceneError("the options button was not found")
+        dots = max(row, key=lambda b: b.right)
     import pyautogui
 
     move_human((dots.left + dots.right) // 2, (dots.top + dots.bottom) // 2)

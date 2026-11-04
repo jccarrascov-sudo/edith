@@ -59,9 +59,11 @@ class SoftButton(QAbstractButton):
     """A quiet round button inside the text field: just its glyph, gray, or in the accent while
     on; pressing it presses a small round hollow into the field."""
 
-    def __init__(self, theme: Theme, glyph: Callable[[QPainter, QRectF, QColor], None], checkable=False):
+    def __init__(self, theme: Theme, glyph: Callable[[QPainter, QRectF, QColor], None], checkable=False,
+                 name: str = ""):
         super().__init__()
         self.theme, self.glyph = theme, glyph
+        self.setAccessibleName(name)   # drawn, no text: screen readers (and UI Automation) need a name
         self.setCheckable(checkable)
         self.setFixedSize(QSize(30, 30))
         self.setCursor(Qt.PointingHandCursor)
@@ -322,12 +324,13 @@ class Edith(QWidget):
         row.setSpacing(2)
         self.btn_audio = None
         if self.actions.toggle_audio:
-            self.btn_audio = SoftButton(self.theme, bars_glyph, checkable=True)
+            self.btn_audio = SoftButton(self.theme, bars_glyph, checkable=True, name="Audio")
             self.btn_audio.setChecked(True)
             self.btn_audio.setToolTip("Audio")
             self.btn_audio.clicked.connect(lambda: self.btn_audio.setChecked(self.actions.toggle_audio()))
             row.addWidget(self.btn_audio)
-        self.btn_options = SoftButton(self.theme, dots_glyph, checkable=True)
+        self.btn_options = SoftButton(self.theme, dots_glyph, checkable=True,
+                                       name="Opciones" if self.lang == "es" else "Options")
         self.btn_options.toggled.connect(self._toggle_menu)
         row.addWidget(self.btn_options)
         self.tools.adjustSize()
@@ -544,6 +547,14 @@ class Edith(QWidget):
         if self.agent.awaiting:
             if not typed or typed == getattr(self, "_last_request", None):
                 self.agent.decide(True, self.editor.toPlainText() if self.editor.isVisible() else None)
+            else:
+                # New text over a waiting preview is a new request, not a lost keystroke:
+                # "corrige: el monto va con S/" corrects the letter on screen.
+                self._last_request = typed
+                self.answer.setText("")
+                self.foot.setText("")
+                self.agent.revise(typed)
+                self.field.selectAll()
             return
         if typed and not self.agent.busy:
             self._last_request = typed

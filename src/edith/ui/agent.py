@@ -496,6 +496,7 @@ class Agent(QObject):
         self.detector = Detector(cfg, self.recipes)
         self._edited: str | None = None         # the user's version of a recipe's result
         self._last_run = None                   # (recipe id, key, file made) for "corrige: ..."
+        self._then = None                       # a request typed over a waiting preview
         self._last_undo = "edit"               # what Undo undoes: Edith's last edit or recipe run
         self._stopped = False
         self._ui.connect(lambda job: job())
@@ -525,6 +526,18 @@ class Agent(QObject):
         self._set_busy(True)
         threading.Thread(target=self._guarded, args=(target, request), daemon=True).start()
 
+    def revise(self, request: str) -> None:
+        """New text typed while a preview waits for Enter: the preview is put aside and the text
+        goes as the next request ("corrige: ..." then corrects that preview)."""
+        request = request.strip()
+        if not request:
+            return
+        if not self.awaiting:
+            self.submit(request)
+            return
+        self._then = request
+        self.decide(False)
+
     def decide(self, confirmed: bool, edited: str | None = None) -> None:
         """Enter (True) or Esc (False) on what waits; `edited` = the user's version of a recipe's
         result, corrected in the preview (it is applied, and Edith learns from it)."""
@@ -553,6 +566,9 @@ class Agent(QObject):
             self.awaiting = False
             self.status.emit("")
             self._set_busy(False)
+            then, self._then = self._then, None
+            if then:
+                self.submit(then)
 
     def stop(self) -> None:
         """The emergency shortcut: kill whatever runs and discard what waits for Enter."""
@@ -742,6 +758,14 @@ class Agent(QObject):
         self._decision.wait()
         self.awaiting = False
         self.result_preview.emit(None)
+        if not self._confirmed and self._then:
+            # Something new was typed over the preview: it goes as a request; "corrige: ..." corrects
+            # THIS preview (seen live Nov 4: Enter did nothing and the correction was lost).
+            from ..recipes.lessons import CORRECT
+
+            if CORRECT.match(self._then) and len(p.outputs) == 1:
+                self._last_run = (p.recipe.id, p.outputs[0].key, str(p.outputs[0].made))
+            return
         if not self._confirmed:
             self.reply.emit(self.t("recipe_discarded"))
             if (p.recipe.kind == "excel_to_word" and len(p.outputs) == 1 and self.cfg.lessons.get("after_reject")):
@@ -829,7 +853,8 @@ class Agent(QObject):
         self.awaiting = False
         self.result_preview.emit(None)
         if not self._confirmed:
-            self.reply.emit(self.t("recipe_discarded"))
+            if not self._then:                         # something new typed over it goes next
+                self.reply.emit(self.t("recipe_discarded"))
             return
         if o.kind == "files":
             folder = inputs[0].parent

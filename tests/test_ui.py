@@ -301,3 +301,53 @@ class PanelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TypingOverAPreviewTests(unittest.TestCase):
+    """Seen live Nov 4: with a preview waiting, "corrige: ..." + Enter did nothing; it was lost."""
+
+    def test_corrige_over_a_waiting_preview_corrects_that_preview(self):
+        import threading
+        import time
+        from types import SimpleNamespace
+
+        from edith.config import load_config
+
+        a = agent.Agent(load_config())
+        made = Path(tempfile.mkdtemp()) / "Payment reminder - Golden Spoon Supplies.docx"
+        made.write_bytes(b"x")
+        p = SimpleNamespace(recipe=SimpleNamespace(id="r1", kind="excel_to_word", level=1),
+                            outputs=[SimpleNamespace(key="Golden Spoon Supplies", made=made)])
+        a.recipe_runner = SimpleNamespace(prepare=lambda m: p)
+        sent = []
+        a.submit = lambda request: sent.append(request)
+        t = threading.Thread(target=a._guarded, args=(lambda _r: a._recipe(SimpleNamespace()), "haz lo mismo"))
+        t.start()
+        end = time.monotonic() + 5
+        while not a.awaiting and time.monotonic() < end:
+            time.sleep(0.02)
+        self.assertTrue(a.awaiting)
+        a.revise("corrige: el monto va con S/ en vez de USD")
+        t.join(5)
+        self.assertEqual(sent, ["corrige: el monto va con S/ en vez de USD"])       # it goes as a request
+        self.assertEqual(a._last_run, ("r1", "Golden Spoon Supplies", str(made)))    # about THIS preview
+        self.assertIsNone(a._then)
+
+    def test_enter_with_nothing_new_still_applies(self):
+        from edith.config import load_config
+
+        a = agent.Agent(load_config())
+        a.awaiting = True
+        a.decide(True)
+        self.assertTrue(a._confirmed)
+        self.assertIsNone(a._then)
+
+
+class AccessibleNamesTests(unittest.TestCase):
+    def test_the_drawn_options_button_has_a_name(self):
+        from edith.ui import panel
+
+        with mock.patch.object(theme, "windows_is_light", return_value=True):
+            th = theme.Theme()
+        b = panel.SoftButton(th, lambda *_a: None, name="Opciones")
+        self.assertEqual(b.accessibleName(), "Opciones")

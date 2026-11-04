@@ -547,3 +547,11 @@ buffer. Causes and fixes:
   "regrésalo a como estaba" -> replace with the earlier text. Tests: 9 new.
 - memory_check after the fix: all OK in the three modes (api, offline with the local model, budget
   reached), 3.5 min. (A first run was stopped after one minute by mistake and wrongly noted as hung.)
+
+## Nov 4, 15:50: typing over a waiting preview; names for the drawn buttons
+Found while recording the video: with a preview waiting for Enter, typing "corrige: el monto va con
+S/" and pressing Enter did nothing (the panel only applied when the field was empty or unchanged),
+so the correction was silently lost. Now new text over a waiting preview is a request: the preview
+is put aside and the text goes next; "corrige: ..." corrects THAT preview (`Agent.revise`). The
+drawn buttons (options "···", audio) have accessible names for screen readers and UI Automation.
+Tests: 3 new.

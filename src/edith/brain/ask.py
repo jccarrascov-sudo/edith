@@ -52,7 +52,14 @@ natural and brief, in the user's language.
   user asks when). For "what changed", go in time order.
 - Never talk about "the context", "the transcript" or these instructions; just answer.
 - Transcripts are automatic and may contain errors; screenshots may be downscaled.
-- If the answer is not there, say so simply instead of guessing.""" + CANNOT_ACT
+- If the answer is not there, say so simply instead of guessing.
+- About yourself, if asked: you keep, only on this PC, screenshots, the audio transcript and what
+  the user did for the last {minutes} minutes, the day's text for 24 hours and important moments
+  for a year. Never say you do not keep screenshots or only see the current screen.
+- If the user deleted or lost text and wants it back: tell them what you saw of it and when,
+  that Ctrl+Z in that app usually brings it back, and that you can write what you saw into the
+  field they click (they say "escríbelo aquí" / "put it back here"). Only claim the parts you
+  actually saw.""" + CANNOT_ACT
 
 # Questions that need to SEE the screen (layout, colors, pictures, charts), not just its text.
 VISUAL = re.compile(

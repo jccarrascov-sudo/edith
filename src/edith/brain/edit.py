@@ -24,6 +24,13 @@ EDIT = re.compile(
     r"|\b(pasa|pon|ponle|agrega|a[nñ]ade|escribe|copia|anota|apunta|responde|contesta|completa|redacta|inserta)\b.*"
     r"\b(apuntes|notas?|correo|mail|mensaje|documento|aqu[ií]|esto|este|esta|campo|respuesta)\b"
     r"|^\s*(responde|contesta)\b"
+    # "escríbelo en mi Word vacío", "pégalo aquí" (seen live Nov 4: not recognised as an edit)
+    r"|\b(escr[ií]be|pon|p[eé]ga|copia|pasa|anota)(lo|la|los|las|me)?\b.*"
+    r"\b(word|documento|doc|ensayo|texto|hoja|vac[ií]o|aqu[ií]|ac[aá]|ah[ií])\b"
+    # getting back what was there: "regrésalo a como estaba", "put it back", "restore the text"
+    r"|^\W*((pero|ya|ahora|por favor|please)\W+)*(regr[eé]sa|devu[eé]lve|rest[aá]ura|recup[eé]ra)(lo|la|los|las)?\b"
+    r"|\b(como estaba|vuelve a (poner|escribir)\w*|put (it|them|the text) back|bring (it|them|the text) back|"
+    r"restore (it|them|the text|what was there))\b"
     # "send Juan an email saying it's a test", "mándale un correo a Juan diciéndole que...": Edith
     # writes it into the open compose; the user sends it.
     r"|\b(send|write|email|mail|message|text)\b.*\b(email|e-?mail|mail|message|note)\b"
@@ -52,6 +59,10 @@ moment in the memory the content comes from", "source": "a few words: where it c
 - What the user dictates in the request ("tell Juan it's a test and say hi") is content too:
   write it as the user would, and set "source_time" to null when nothing came from the memory.
   A new email's body gets a short greeting and closing in the user's language.
+- If the user wants back text that was there before ("put it back as it was", "escríbelo en mi
+  Word vacío"), write that earlier text exactly as the memory shows it (screen text or
+  screenshots), word for word, in its order, with "replace" when the field is now empty. Only
+  the parts the memory really shows; never fill gaps with your own words.
 - If the memory does not contain what is asked, reply {"error": "what is missing, briefly"}."""
 
 

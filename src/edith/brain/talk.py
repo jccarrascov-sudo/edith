@@ -15,6 +15,7 @@ from typing import Callable
 from .ask import CANNOT_ACT
 
 NEED_MEMORY = "[[MEMORY]]"
+RESET = "\x00"          # sent to on_token: forget what was streamed so far
 
 # Clear signs that the question is about the user's own recent screen, audio or actions.
 MEMORY = re.compile(
@@ -25,8 +26,22 @@ MEMORY = re.compile(
     r"recuerdas|recuerda|hace (un rato|rato|\d+|poco|unos)|esta (ma[nñ]ana|tarde)|en (mi|la) pantalla|"
     r"(vi|viste|estaba|estuve|hice|escuch[eé]|le[ií]|escrib[ií]|abr[ií]|ten[ií]a)\b|"
     r"(dijo|dijeron|explic[oó]|mencion[oó]|coment[oó])|qu[eé] (hab[ií]a|pas[oó]|cambi[oó])|"
-    r"cu[aá]l (era|fue)|resume|resumen|el video|la clase|la reuni[oó]n|el correo|el profe)\b",
+    r"cu[aá]l (era|fue)|resume|resumen|el video|la clase|la reuni[oó]n|el correo|el profe|"
+    # about Edith's own memory, and getting back what was there (seen live Nov 4: these went to
+    # the chat, which denied having any memory)
+    r"capturas?|caputras?|capturaste|screen ?shots?|(tu|tus|your|de) (memoria|memory)|"
+    r"\d+\s*min(uto)?s?|te acuerdas|acu[eé]rdate|"
+    r"guard(as|aste|aste)|grab(as|aste)|(do|did|can) you (keep|store|save|record|see|remember)|"
+    r"lo que (hab[ií]a|ten[ií]a|borr[eé]|escrib[ií]|estaba)|como estaba|antes de borrar|"
+    r"what i (deleted|had|wrote)|before i deleted|as it was)\b",
     re.IGNORECASE)
+
+# The chat must never deny the memory; such an answer is thrown away and the memory answers.
+DENIES_MEMORY = re.compile(
+    r"\b(no (guardo|tomo|grabo|almaceno|conservo|tengo) (capturas|memoria|nada|lo de antes|registro)|"
+    r"no guardo lo de antes|solo veo lo que (tienes|hay|est[aá])|no (puedo|pude) ver lo de antes|"
+    r"no me lleg[oó] ese recuerdo|i (do not|don't) (keep|store|save|take|record|have) (screenshots|any memory|a memory|memory)|"
+    r"i (can )?only see (what|the current))", re.IGNORECASE)
 
 # Small talk: greetings, thanks, how are you, who are you.
 CHAT = re.compile(
@@ -40,10 +55,12 @@ CHAT_PROMPT = """\
 You are Edith, a calm, warm desktop companion. Talk like a thoughtful person: natural, kind,
 brief (one to three sentences unless more is truly needed), in the user's language. No lists
 unless asked, no emojis, no talk about being an AI.
-You can also remember what happened on the user's computer in the last minutes (screen, audio,
-what they did) and today's important details, but you were NOT given any of it now.
-If answering would need that, i.e. the user asks about something they saw, heard, read or did,
-reply exactly with {token} and nothing else. Otherwise just answer.""" + CANNOT_ACT
+You DO have a memory, kept only on this PC: screenshots, the audio transcript and what the user
+did in the last {minutes} minutes, the day's text for 24 hours, important moments for a year.
+It is just not in this message. So if the user asks about something they saw, heard, read,
+wrote, deleted or did, wants something back as it was, or asks about your memory or whether you
+keep screenshots, reply exactly with {token} and nothing else. Never say you have no memory, do
+not keep screenshots or only see the current screen. Otherwise just answer.""" + CANNOT_ACT
 
 
 # A doubt about what is on the screen right now: "what does this error mean?", "explain this".

@@ -183,16 +183,41 @@ TEXT_KINDS = {"TextControl", "HeaderControl", "HeaderItemControl", "DocumentCont
               "HyperlinkControl", "ListItemControl", "DataItemControl"}   # buttons and tabs are mostly app chrome
 
 
+DOC_CHARS = 6000      # the visible text of documents, on top of the window's other text
+
+
+def _document_text(control, max_chars: int) -> str:
+    """The text of a document control that is on screen now (TextPattern visible ranges), "" if
+    it has none. Only what the screen shows, never the whole file."""
+    try:
+        pattern = control.GetPattern(auto.PatternId.TextPattern)
+        if not pattern:
+            return ""
+        parts = [r.GetText(max_chars) or "" for r in (pattern.GetVisibleRanges() or [])]
+    except Exception:
+        return ""
+    return "\n".join(p.replace("\r", "\n") for p in parts)[:max_chars]
+
+
 def visible_text(hwnd: int, max_chars: int = 4000, max_elements: int = 600, budget_s: float = 1.5) -> str:
     """The readable text of a window, top to bottom as UIA lists it: labels, headings, cell and
-    field values (never a password field's). Repeated lines are dropped. No model is involved."""
+    field values (never a password field's), and the visible part of documents (a Word page's
+    body). Repeated lines are dropped. No model is involved."""
     root = auto.ControlFromHandle(hwnd)
     if root is None:
         return ""
     deadline = time.monotonic() + budget_s
     lines: list[str] = []
     seen: set[str] = set()
-    size = 0
+    size = doc_size = 0
+
+    def add(text: str) -> int:
+        if len(text) < 2 or text in seen:
+            return 0
+        seen.add(text)
+        lines.append(text)
+        return len(text) + 1
+
     for n, (control, _depth) in enumerate(auto.WalkControl(root, includeTop=False, maxDepth=40)):
         if n >= max_elements or size >= max_chars or time.monotonic() > deadline:
             break
@@ -201,14 +226,17 @@ def visible_text(hwnd: int, max_chars: int = 4000, max_elements: int = 600, budg
                 continue
             if control.GetPropertyValue(auto.PropertyId.IsPasswordProperty):
                 continue
-            name = re.sub(r"\s+", " ", control.Name or "").strip()
+            size += add(re.sub(r"\s+", " ", control.Name or "").strip())
+            if control.ControlTypeName == "DocumentControl":
+                # A document's body (Word, rich editors) has no Name/Value: its text comes from the
+                # TextPattern (seen live Nov 4: an essay's body was never in the memory, only Word's
+                # ribbon). It has its own budget so a long page does not crowd out the window.
+                if doc_size < DOC_CHARS:
+                    for para in _document_text(control, DOC_CHARS - doc_size).splitlines():
+                        doc_size += add(para.strip())
+                continue
             value = _value(control) if control.ControlTypeName == "EditControl" else None
-            for text in (name, (value or "").strip()):
-                if len(text) < 2 or text in seen:
-                    continue
-                seen.add(text)
-                lines.append(text)
-                size += len(text) + 1
+            size += add((value or "").strip())
         except Exception:
             continue
-    return "\n".join(lines)[:max_chars]
+    return "\n".join(lines)[:max_chars + DOC_CHARS]

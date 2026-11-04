@@ -31,6 +31,32 @@ class KindTests(unittest.TestCase):
         for q in ("¿cómo automatizo esto?", "help me automate these invoices", "esto es muy repetitivo"):
             self.assertEqual(talk.kind(q), "automate", q)
 
+    def test_the_questions_of_nov_4_go_to_the_memory(self):
+        # Asked live on Nov 4; they went to the chat, which said it kept no screenshots.
+        for q in ("pero tu no tomas caputras?", "pero tú no tomas capturas?", "10 minutos ?? de memoria no era",
+                  "no viste como borre este nuevo word?", "¿te acuerdas de lo que había en el Word?",
+                  "do you keep screenshots?", "what was there before I deleted it?"):
+            self.assertEqual(talk.kind(q), "memory", q)
+        for q in ("¿qué es la memoria RAM?", "what is a memory leak?"):
+            self.assertNotEqual(talk.kind(q), "memory", q)
+
+    def test_a_denial_of_the_memory_is_recognised(self):
+        for a in ("No, yo solo veo lo que tienes en pantalla en el momento, no guardo capturas.",
+                  "No, solo veo lo que tienes en este momento en pantalla, no guardo lo de antes.",
+                  "Tienes razón, así debería ser, pero en esta conversación no me llegó ese recuerdo y no puedo verlo.",
+                  "I don't keep screenshots, I only see what is on your screen."):
+            self.assertTrue(talk.DENIES_MEMORY.search(a), a)
+        self.assertFalse(talk.DENIES_MEMORY.search("Sí, guardo los últimos 10 minutos en tu PC."))
+
+    def test_the_restore_requests_of_nov_4_are_edits(self):
+        from edith.brain.edit import is_edit
+
+        for r in ("regresalo a como estaba", "escribelo n mi word vacio", "escríbelo en mi Word vacío",
+                  "pégalo aquí", "put it back as it was", "restore the text"):
+            self.assertTrue(is_edit(r), r)
+        for r in ("¿qué pasa aquí?", "hola", "what is recursion?"):
+            self.assertFalse(is_edit(r), r)
+
     def test_the_hidden_token_is_never_shown(self):
         shown = []
         g = talk.Gate(shown.append)
@@ -91,6 +117,33 @@ class ChatRoutingTests(unittest.TestCase):
         self.assertIn("secret screen words", second)                 # now with the memory
         self.assertEqual(reply.text, "At 10:41 they said Friday.")
         self.assertNotIn(talk.NEED_MEMORY, "".join(shown))
+
+
+    def test_a_chat_answer_denying_the_memory_is_replaced_by_the_memory(self):
+        replies = iter([("No, solo veo lo que tienes en este momento en pantalla, no guardo lo de antes.", None, 0.0001),
+                        ("Sí: a las 13:51 tenías el ensayo abierto.", None, 0.002)])
+
+        def stream(purpose, on_token=None, **kw):
+            text, usage, cost = next(replies)
+            if on_token:
+                on_token(text)
+            return text, usage, cost
+
+        fake = mock.Mock()
+        fake.chat_stream.side_effect = stream
+        shown = []
+        with mock.patch("edith.brain.client.MetaClient", return_value=fake):
+            reply = self.router().respond("¿y eso es todo lo que ves?", on_token=shown.append)
+        self.assertEqual(fake.chat_stream.call_count, 2)
+        self.assertIn("secret screen words", str(fake.chat_stream.call_args_list[1].kwargs["messages"]))
+        self.assertEqual(reply.text, "Sí: a las 13:51 tenías el ensayo abierto.")
+        self.assertIn(talk.RESET, shown)                               # the panel cleared the denial
+        self.assertNotIn("no guardo", "".join(shown[shown.index(talk.RESET):]))
+
+    def test_the_chat_prompt_says_edith_has_a_memory(self):
+        p = talk.CHAT_PROMPT.format(token=talk.NEED_MEMORY, minutes=10)
+        self.assertIn("You DO have a memory", p)
+        self.assertIn("10 minutes", p)
 
 
 class ScreenAndGuideTests(ChatRoutingTests):

@@ -883,6 +883,11 @@ class Agent(QObject):
         streamed = {"text": "", "shown": 0.0}
 
         def on_token(piece: str) -> None:
+            if piece == "\x00":                         # talk.RESET: the answer starts over
+                streamed["text"] = ""
+                self.reply.emit("")
+                self.status.emit(self.t("thinking"))
+                return
             if not streamed["text"]:
                 self.status.emit("")
             streamed["text"] += piece

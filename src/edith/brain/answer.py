@@ -127,7 +127,7 @@ class Router:
 
             k = talk.kind(question)
             if k in ("chat", "unsure"):
-                chat = self._chat(question, on_token, reason, t0, can_escalate=k == "unsure")
+                chat = self._chat(question, on_token, reason, t0, can_escalate=True)
                 if chat is not None:
                     return chat
             elif k == "automate":
@@ -154,7 +154,7 @@ class Router:
         memory (only when can_escalate), so the caller answers with it."""
         from . import talk
 
-        system = talk.CHAT_PROMPT.format(token=talk.NEED_MEMORY)
+        system = talk.CHAT_PROMPT.format(token=talk.NEED_MEMORY, minutes=self.cfg.retention["minutes"])
         gate = talk.Gate(on_token)
         text, where, cost = None, "cloud", 0.0
         if reason is None:
@@ -181,6 +181,11 @@ class Router:
             append_ledger(self.ledger.path, {"ts": time.time(), "model": MODEL_NAME, "purpose": "chat", "input": 0,
                                              "cached": 0, "output": 0, "images": 0, "cost": 0.0,
                                              "latency_s": round(time.monotonic() - t0, 2)})
+        if talk.DENIES_MEMORY.search(text) and can_escalate:
+            log.info("Chat denied having a memory; answering with the memory instead")
+            if on_token and gate.open:
+                on_token(talk.RESET)                # the panel clears what was already shown
+            return None
         if talk.Gate.asked_for_memory(text):
             if can_escalate:
                 log.info("Chat asked for the memory; answering with it")

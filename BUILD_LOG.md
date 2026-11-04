@@ -527,3 +527,23 @@ Saludos,". 196 tests pass.
   sheet): 233 pass.
 - Not built: level 3 (web API / headless browser with the user's session), free mode (stage D),
   lessons (c)/(d), escalation for forms.
+
+## Nov 4 afternoon: Edith denied having a memory (found live by the user)
+The user emptied two Word documents and asked Edith about it. Edith answered "no guardo capturas",
+"solo veo lo que tienes en este momento" while 77 screenshots of the last 10 minutes were in the
+buffer. Causes and fixes:
+- Questions about Edith's memory ("pero tú no tomas capturas?", "10 minutos de memoria no era")
+  matched no pattern and went to the chat, whose prompt said "you were NOT given any of it now";
+  the model turned that into "I have no memory". Now: those phrases go to the memory
+  (`talk.MEMORY`), the chat prompt states what Edith keeps, any chat answer that still denies the
+  memory is thrown away and the memory answers (`talk.DENIES_MEMORY`; the panel clears what was
+  streamed), and the memory prompt describes the memory and offers to write lost text back.
+- "regrésalo a como estaba", "escríbelo en mi Word vacío" were not edits: now they are, and the
+  edit prompt restores earlier text word for word, only the parts the memory shows.
+- The memory never had a document's body: Word's page is a DocumentControl whose text is only in
+  its TextPattern. `uia.visible_text` now reads its visible ranges (what is on screen, never the
+  rest of the file; own 6000-char budget). Live on a test Word document: body read in 1.7 s.
+- Live with Muse Spark on an isolated memory: the 7 questions of that conversation, 0 denials;
+  "regrésalo a como estaba" -> replace with the earlier text. Tests: 9 new.
+- memory_check after the fix: api mode all OK; offline mode hung on the local model (llama-server, low RAM with
+  Ollama running) and was stopped; it passed this morning and the fix does not touch that path.

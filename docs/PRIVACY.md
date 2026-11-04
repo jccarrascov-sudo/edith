@@ -7,7 +7,7 @@
 | Recorded | How | Never |
 |---|---|---|
 | Screenshots of the primary monitor, only when the screen changed | mss, change detection without the taskbar | the cursor; excluded apps |
-| The text of the window in front | UI Automation, like a screen reader | password fields; excluded apps; Edith's own windows |
+| The text of the window in front, including the part of a document on screen (a Word page's body) | UI Automation, like a screen reader (TextPattern visible ranges: never the rest of the file) | password fields; excluded apps; Edith's own windows |
 | Clicks, with the element under them | a low-level **mouse** hook | the keyboard: there is no keyboard hook and the key state is never read (a test checks the whole source tree) |
 | Values of text fields once they settle | UI Automation ValuePattern | password fields |
 | System audio (what comes out of the speakers) | WASAPI loopback, faster-whisper on the GPU | the microphone |

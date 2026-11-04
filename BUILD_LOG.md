@@ -521,7 +521,8 @@ Saludos,". 196 tests pass.
   the app shows left of its box (vision's name only when there is none); `locate` refuses two names
   on one box; a failed level 5 locates once more before giving up. Test: swapped points -> the
   first round fails, the second locate compiles.
-- Demo-check 16 steps: PENDING_P4.
+- Demo-check 16 steps, alone: 5/5 runs (12:35). In 3 of the 5 runs vision put two fields on one
+  box and the second locate fixed it, so level-5 compiles take 43-82 s.
 - Tests: 9 new (detection x3, forms x5 with the real app on the hidden desktop, two recipes on one
   sheet): 233 pass.
 - Not built: level 3 (web API / headless browser with the user's session), free mode (stage D),

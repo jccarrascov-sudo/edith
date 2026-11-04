@@ -12,14 +12,14 @@ Deadline: **Nov 4, 2026, 9 PM US Eastern (8 PM Lima)**. Indie Developer track.
 - [ ] Submission form filled with the repo link and the video link (the user)
 
 ## README for judges
-- [ ] First line: the theme + the problem in one sentence; pitch "Show it once. Edith does the next ones."
-- [ ] Mermaid diagrams: the execution cascade and the hybrid local/cloud scheme
-- [ ] "How we use Meta's models" (Muse Glimmer local / Muse Spark / SAM 3.1)
-- [ ] "Research Edith builds on" (paper, institution, venue, what Edith takes)
-- [ ] Results with real numbers: demo-checks, benchmark, times per level, time saved, cost
-- [ ] Privacy and security: what stays local, what goes to the API, what is never recorded,
+- [x] First line: the theme + the problem in one sentence; pitch "Show it once. Edith does the next ones."
+- [x] Mermaid diagrams: the execution cascade and the hybrid local/cloud scheme
+- [x] "How we use Meta's models" (Muse Glimmer local / Muse Spark / SAM 3.1)
+- [x] "Research Edith builds on" (paper, institution, venue, what Edith takes)
+- [x] Results with real numbers: demo-checks, benchmark, times per level, time saved, cost
+- [x] Privacy and security: what stays local, what goes to the API, what is never recorded,
       confirmations, emergency shortcut
-- [ ] Setup / run, scope and limitations (what is not built: level 3, free mode, ...)
+- [x] Setup / run, scope and limitations (what is not built: level 3, free mode, ...)
 
 ## Evidence (scripts in the repo, results in `results/`)
 - [x] `scripts/demo_check.py` — recipes: learn, variation, apply, undo, ambiguity, lessons, escalation,

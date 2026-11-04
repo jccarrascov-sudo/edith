@@ -1,6 +1,6 @@
 # Edith
 
-**{THEME}** — Every week we redo the same small computer tasks by hand (a letter per client, an
+**Push the Frontier** — Every week we redo the same small computer tasks by hand (a letter per client, an
 invoice per row), because teaching a computer to do them still takes a programmer.
 
 **Show it once. Edith does the next ones.**
@@ -147,7 +147,7 @@ data is fictitious and the memories are built in isolated Edith homes, never the
 
 | Check | What it goes through | Result |
 |---|---|---|
-| `demo_check.py` | learn (Excel -> Word) -> variation in < 3 s -> Enter -> Undo -> ambiguous client -> two letters + Esc -> lesson from the edited preview -> applied by itself -> "corrige: ..." -> applied -> Discard -> a forced bug replanned by Muse Spark -> replan forced to fail: down to level 2 -> "¿Guardo esto como receta?" -> desktop form at level 4 (dry runs, Enter, Undo) -> forced to level 5 with SAM 3.1 {{DC_EXTRA_STEPS}} | {{DC_RESULT}} |
+| `demo_check.py` | learn (Excel -> Word) -> variation in < 3 s -> Enter -> Undo -> ambiguous client -> two letters + Esc -> lesson from the edited preview -> applied by itself -> "corrige: ..." -> applied -> Discard -> a forced bug replanned by Muse Spark -> replan forced to fail: down to level 2 -> "¿Guardo esto como receta?" -> desktop form at level 4 (dry runs, Enter, Undo) -> forced to level 5 with SAM 3.1 -> preview -> Esc | **5/5 runs, 16/16 steps each** (alone on the machine; 36 min) |
 | `memory_check.py` | capture -> temporal question -> edit from memory -> apply in a test window -> undo, with the API / without internet (local Muse Glimmer) / with the budget reached | 3/3 modes OK |
 
 **Recipes, by level** (the demo letter and the demo desktop form):
@@ -197,10 +197,6 @@ so these are easy cases):
 | Key moments vs 30 lines labelled by hand (filter, no model) | precision 94 %, recall 100 % |
 | Temporal question with the API / local only | 3.3 s ($0.0025) / 45-56 s ($0) |
 | **Real cost of 10 test questions** (chat, memory, screen, automation) | **$0.026 total**, 4.1 s avg, 10/10 right |
-
-{{RESOURCES}}
-
-{{QUANT}}
 
 **Cost.** Measured unit costs: a question $0.0008-0.0052 (avg $0.0026); compiling a recipe,
 learning a lesson or replanning ~$0.017 per call; running a recipe $0. A day with 20 questions,
@@ -565,7 +561,7 @@ too): 5/5 runs, 13 steps each (replan and level-down passed in every run).
   which, unless the request names one ("la carta para...", "en Northwind para...").
 
 Demo-check with these steps (detect -> Yes -> recipe; form at level 4 -> preview -> Enter -> Undo;
-form forced to level 5 with SAM 3.1 -> preview -> Esc): PENDING_P4.
+form forced to level 5 with SAM 3.1 -> preview -> Esc): 5/5 runs, 16/16 steps each (Nov 4, 12:35).
 
 ## Demo environment
 

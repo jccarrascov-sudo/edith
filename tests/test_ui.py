@@ -351,3 +351,34 @@ class AccessibleNamesTests(unittest.TestCase):
             th = theme.Theme()
         b = panel.SoftButton(th, lambda *_a: None, name="Opciones")
         self.assertEqual(b.accessibleName(), "Opciones")
+
+
+class FieldOverAPreviewTests(PanelTests):
+    """Seen live Nov 4: the field stayed read-only while a preview waited, so "corrige: ..." never
+    reached it and Enter applied the letter. The real panel, not only the agent."""
+
+    def test_the_field_is_writable_while_a_preview_waits_and_new_text_is_a_request(self):
+        from types import SimpleNamespace
+
+        a = self.edith.agent
+        a.busy = True
+        a.busy_changed.emit(True)
+        _app.processEvents()
+        self.assertTrue(self.edith.field.isReadOnly())             # working: nothing to type into
+        a.awaiting = True
+        self.edith._update_dot()                                   # what the preview signal now triggers
+        self.assertFalse(self.edith.field.isReadOnly())            # waiting for Enter: writable
+        sent = []
+        a.revise = lambda text: sent.append(text)
+        self.edith._last_request = "haz lo mismo para Golden Spoon Supplies"
+        self.edith.field.setText("corrige: el monto va con S/ en vez de USD")
+        self.edith._enter()
+        self.assertEqual(sent, ["corrige: el monto va con S/ en vez de USD"])
+
+    def test_the_preview_signals_re_evaluate_the_field(self):
+        a = self.edith.agent
+        a.busy, a.awaiting = True, True
+        self.edith.field.setReadOnly(True)
+        a.result_preview.emit(None)
+        _app.processEvents()
+        self.assertFalse(self.edith.field.isReadOnly())

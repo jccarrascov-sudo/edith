@@ -165,6 +165,10 @@ class Edith(QWidget):
         agent.footnote.connect(self._show_footnote)
         agent.preview.connect(self._show_preview)
         agent.result_preview.connect(self._show_result_preview)
+        # A waiting preview makes the field writable again ("corrige: ..." over it); without this
+        # the field stayed read-only from "busy" and Enter applied the preview (seen live Nov 4).
+        agent.preview.connect(lambda _p: self._update_dot())
+        agent.result_preview.connect(lambda _p: self._update_dot())
         agent.lesson.connect(self._show_lesson)
         agent.suggestion.connect(self._show_suggestion)
         agent.undoable.connect(self._show_undo)

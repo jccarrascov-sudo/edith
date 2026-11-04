@@ -555,3 +555,8 @@ so the correction was silently lost. Now new text over a waiting preview is a re
 is put aside and the text goes next; "corrige: ..." corrects THAT preview (`Agent.revise`). The
 drawn buttons (options "···", audio) have accessible names for screen readers and UI Automation.
 Tests: 3 new.
+- 16:15, the same flow live: it still failed. The field is made read-only while Edith works and was
+  re-evaluated only when "busy" changed; a preview arrives while still busy, so the field stayed
+  read-only, the typed correction never entered it and Enter applied the letter. The panel now
+  re-evaluates the field on every preview signal. 2 new tests drive the real panel (the first fix
+  had only been tested on the agent).

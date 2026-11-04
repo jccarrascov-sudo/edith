@@ -70,6 +70,13 @@ context = 8192
 port = 0                  # 0 = a free port each time
 timeout_s = 120
 
+[companion]
+# Edith remembers the conversation and the person (all on this PC; "Delete everything" clears it).
+history_turns = 6         # the last exchanges that go with each request...
+history_hours = 3         # ...if they are this recent
+keep_days = 365           # past conversations, searched when a question refers to them
+learn = true              # note lasting facts about the user after each exchange
+
 [archive]
 # The day's text: what windows showed, what was heard, field values, and short descriptions
 # of screens with little text. Screenshots and audio are still deleted after 10 minutes.

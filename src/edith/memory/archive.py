@@ -56,6 +56,39 @@ def terms(text: str) -> list[str]:
     return out
 
 
+def rank(records: list[dict], question: str, max_chars: int = 4000, neighbours: int = 1,
+         near_s: float = 90) -> list[dict]:
+    """The records (with "ts" and "text") that best match the question: term overlap weighted by
+    rarity, each with its neighbours from around the same time, oldest first, within max_chars."""
+    if not records:
+        return []
+    q = set(terms(question))
+    if not q:
+        return []
+    docs = [Counter(terms(r["text"] + " " + r.get("where", ""))) for r in records]
+    df = Counter(t for d in docs for t in set(d) if t in q)
+    n = len(docs)
+    scored = []
+    for i, d in enumerate(docs):
+        s = sum(math.log(1 + n / df[t]) for t in q if d.get(t))
+        if s > 0:
+            scored.append((s, i))
+    picked: set[int] = set()
+    size = 0
+    for _s, i in sorted(scored, reverse=True):
+        for j in range(max(0, i - neighbours), min(n, i + neighbours + 1)):
+            if j in picked or abs(records[j]["ts"] - records[i]["ts"]) > near_s:
+                continue                                    # context only from around the same time
+            cost = len(records[j]["text"]) + 40
+            if size + cost > max_chars:
+                break
+            picked.add(j)
+            size += cost
+        if size >= max_chars:
+            break
+    return [records[j] for j in sorted(picked)]
+
+
 class DayArchive:
     def __init__(self, cfg: Config):
         self.dir = cfg.buffer_dir / "day"
@@ -105,34 +138,7 @@ class DayArchive:
                max_chars: int = 4000, neighbours: int = 1) -> list[dict]:
         """The records that best match the question (term overlap weighted by rarity), each with
         its neighbours for context, oldest first, within max_chars."""
-        records = self.read(since, until)
-        if not records:
-            return []
-        q = set(terms(question))
-        if not q:
-            return []
-        docs = [Counter(terms(r["text"] + " " + r.get("where", ""))) for r in records]
-        df = Counter(t for d in docs for t in set(d) if t in q)
-        n = len(docs)
-        scored = []
-        for i, d in enumerate(docs):
-            s = sum(math.log(1 + n / df[t]) for t in q if d.get(t))
-            if s > 0:
-                scored.append((s, i))
-        picked: set[int] = set()
-        size = 0
-        for s, i in sorted(scored, reverse=True):
-            for j in range(max(0, i - neighbours), min(n, i + neighbours + 1)):
-                if j in picked or abs(records[j]["ts"] - records[i]["ts"]) > 90:
-                    continue                                # context only from around the same time
-                cost = len(records[j]["text"]) + 40
-                if size + cost > max_chars:
-                    break
-                picked.add(j)
-                size += cost
-            if size >= max_chars:
-                break
-        return [records[j] for j in sorted(picked)]
+        return rank(self.read(since, until), question, max_chars, neighbours)
 
 
 class Archiver:

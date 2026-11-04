@@ -1,8 +1,8 @@
 """Privacy controls that act on everything at once: "Delete everything now" and the logs.
 
 Deleting removes all that the memory ever kept, on the spot: screenshots, audio, the timeline,
-the day's text archive, the notes (block summaries and the year's important moments) and the
-plans learned from demonstrations. Verified machines in tools/ (which the user confirmed) and
+the day's text archive, the notes (block summaries and the year's important moments), the
+conversations and what Edith learned about the user, and the plans learned from demonstrations. Verified machines in tools/ (which the user confirmed) and
 the cost ledger are kept, and the panel says so."""
 
 from __future__ import annotations
@@ -33,7 +33,8 @@ def delete_everything(cfg: Config) -> int:
                 if f.is_file():
                     f.unlink(missing_ok=True)
                     removed += 1
-    for f in (cfg.notes_path, cfg.notes_path.with_suffix(".tmp")):
+    for f in (cfg.notes_path, cfg.notes_path.with_suffix(".tmp"), cfg.buffer_dir / "conversation.jsonl",
+              cfg.buffer_dir / "profile.jsonl"):
         if f.exists():
             f.unlink()
             removed += 1

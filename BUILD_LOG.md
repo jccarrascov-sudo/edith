@@ -370,3 +370,18 @@ The user asked that Edith keep "any important detail" of the day, and that impor
   (polite forms included; a sentence with "?" or starting with "did I/do you" stays a question).
 - Plain-language replies when it cannot be repeated: no form filled in the last minutes (and
   what Edith can repeat today), the spreadsheet is not open, or no row matches. 183 tests pass.
+
+## Companion memory (Nov 3, user's request: remember the conversation and the person)
+- `brain/companion.py`: the last 6 exchanges of the last 3 hours go with every request (cloud as
+  chat turns, local as a "conversation so far" block), so "and why?" is understood. Every exchange
+  is kept a year and past ones that match a question are found with the archive's ranking
+  (`archive.rank`, now shared). Lasting facts about the user: "remember that ..." / "forget that
+  ..." at once, with no model; after an exchange where the user talks about themselves, the local
+  model (or the cloud, only if that exchange already went there) notes new facts in the
+  background, from the user's words only.
+- Fixed before commit: "remember what I asked you yesterday?" and "recuerda lo que vimos" were
+  saved as facts; questions (and "when/what/lo que ..." objects) now go to the memory. The gray
+  line said "only your question" while the thread was sent too: it now says "your question and
+  our conversation". Delete everything removes conversation.jsonl and profile.jsonl.
+- Cloud chat: max_tokens 800 -> 2500 with reasoning "minimal" (reasoning tokens count).
+- Tests: 7 new, 190 pass.

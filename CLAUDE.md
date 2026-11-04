@@ -152,7 +152,8 @@ Meta Global AI Developer Hackathon 2026, Indie Developer track, theme "Push the 
   day's TEXT archive and block summaries kept 24 h; important moments (dates, deadlines, exams,
   tasks, appointments, payments) kept 12 months (user's decision, Nov 3: "important things whose
   omission could affect the user must stay for a year"; "any important detail" must be kept).
-  Excluded apps never captured. Pause in the
+  Conversations with Edith and lasting facts about the user (brain/companion.py) kept 12
+  months; deleted by "Delete everything now". Excluded apps never captured. Pause in the
   panel's options; the audio button turns system-audio listening off.
 
 ## Environment & style

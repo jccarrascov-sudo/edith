@@ -16,6 +16,7 @@ the cost ledger with its latency (local answers cost $0)."""
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -50,8 +51,13 @@ class Router:
         self.ledger = ledger or Ledger()
         self.notes = notes or NoteBook(cfg)
         from ..memory.archive import DayArchive
+        from .companion import Conversation, Profile
 
         self.archive = DayArchive(cfg)
+        self.conversation = Conversation(cfg)
+        self.profile = Profile(cfg)
+        self._thread: list[dict] = []
+        self._about = ""
         self.local_only = False
 
     def month(self) -> tuple[float, float]:
@@ -62,8 +68,54 @@ class Router:
                 confirm_images: Callable[[int], bool] | None = None, system: str | None = None,
                 extra: str = "") -> Reply:
         """`system` and `extra` (put just before the request) are for other jobs than answering,
-        e.g. preparing an edit (brain/edit.py)."""
+        e.g. preparing an edit (brain/edit.py). The conversation so far and what Edith knows
+        about the user go with every request; each exchange is remembered and learned from."""
+        from . import companion
+
         t0 = time.monotonic()
+        if system is None and (fact := companion.to_remember(question)):
+            saved = self.profile.add(fact, "told")
+            text = self.t("remembered" if saved else "already_known")
+            self.conversation.add(question, text, "remember")
+            return Reply(text, "", "none", 0.0, time.monotonic() - t0)
+        if system is None and (fact := companion.to_forget(question)):
+            text = self.t("forgot" if self.profile.forget(fact) else "forgot_none")
+            self.conversation.add(question, text, "forget")
+            return Reply(text, "", "none", 0.0, time.monotonic() - t0)
+        self._thread = self.conversation.recent()
+        self._about = companion.about_user(self.profile.facts(), self.conversation.recall(question))
+        reply = self._respond(question, on_token, confirm_images, system, extra, t0)
+        if reply.where != "none" and reply.text:
+            self.conversation.add(question, reply.text, "edit" if system else "answer")
+            if self.cfg.companion["learn"] and system is None:
+                threading.Thread(target=self._learn, args=(question, reply), daemon=True).start()
+        return reply
+
+    def _learn(self, question: str, reply: Reply) -> None:
+        """Note lasting facts about the user, in the background: with the local model if there
+        is one; otherwise with the cloud only if this exchange already went there."""
+        from . import companion
+
+        if not companion.ABOUT_SELF.search(question):
+            return
+        if self.local and self.local.installed:
+            def generate(system, user):
+                return self.local.generate(system, user, max_tokens=200, background=True)
+        elif reply.where == "cloud" and not self.local_only:
+            def generate(system, user):
+                from .client import MetaClient
+
+                r = MetaClient(self.cfg).chat("learn", messages=[{"role": "system", "content": system},
+                                                                 {"role": "user", "content": user}],
+                                              max_tokens=400, reasoning_effort="low")
+                return r.choices[0].message.content or ""
+        else:
+            return
+        n = companion.learn(self.profile, generate, question)
+        if n:
+            log.info("Learned %d new fact(s) about the user", n)
+
+    def _respond(self, question, on_token, confirm_images, system, extra, t0) -> Reply:
         self._system = system or SYSTEM_PROMPT.format(minutes=self.cfg.retention["minutes"])
         self._extra = extra
         timeline = Timeline(self.cfg)
@@ -110,9 +162,9 @@ class Router:
                 from .client import MetaClient
 
                 text, _usage, cost = MetaClient(self.cfg).chat_stream(
-                    "chat", on_token=gate, messages=[{"role": "system", "content": system},
-                                                     {"role": "user", "content": question}],
-                    max_tokens=800, reasoning_effort="low")
+                    "chat", on_token=gate, messages=self._with_person(
+                        [{"role": "system", "content": system}, {"role": "user", "content": question}]),
+                    max_tokens=2500, reasoning_effort="minimal")   # reasoning tokens count too
             except Exception as exc:                # no key, no internet, API error, brake
                 log.info("Cloud chat unavailable (%s); answering locally", type(exc).__name__)
                 text = None
@@ -121,7 +173,8 @@ class Router:
                 return Reply(self.t("no_local", why=self.t(f"why_{reason or 'offline'}")), "", "none")
             self.local.ensure_started()
             try:
-                text = self.local.generate(system, question, max_tokens=300, on_token=gate)
+                text = self.local.generate(self._local_system(system), self._local_thread() + question,
+                                           max_tokens=300, on_token=gate)
             except LocalUnavailable:
                 return Reply(self.t("no_local", why=self.t(f"why_{reason or 'offline'}")), "", "none")
             where = "local"
@@ -133,7 +186,8 @@ class Router:
                 log.info("Chat asked for the memory; answering with it")
                 return None
             text = text.replace(talk.NEED_MEMORY, "").strip()
-        foot = self.t("answered_locally") if where == "local" else self.t("sent_chat", cost=f"${cost:.4f}")
+        foot = self.t("answered_locally") if where == "local" else self.t(
+            "sent_chat_thread" if self._thread or self._about else "sent_chat", cost=f"${cost:.4f}")
         return Reply(text.strip(), foot, where, cost, time.monotonic() - t0)
 
     # --- cloud ----------------------------------------------------------------------------------
@@ -187,7 +241,23 @@ class Router:
         messages[0]["content"] = self._system
         if self._extra:
             messages[1]["content"].insert(len(messages[1]["content"]) - 1, {"type": "text", "text": self._extra})
-        return messages, stats
+        return self._with_person(messages), stats
+
+    # --- the conversation and the person ------------------------------------------------------
+    def _with_person(self, messages: list[dict]) -> list[dict]:
+        """[system, user] -> [system, what is known about the user, the thread so far, user]."""
+        from .companion import history_messages
+
+        about = [{"role": "system", "content": self._about}] if self._about else []
+        return messages[:1] + about + history_messages(self._thread) + messages[1:]
+
+    def _local_system(self, system: str) -> str:
+        return system + (f"\n\n{self._about}" if self._about else "")
+
+    def _local_thread(self) -> str:
+        from .companion import history_text
+
+        return f"The conversation so far:\n{history_text(self._thread)}\n\nNow the user says:\n" if self._thread else ""
 
     def _sent(self, stats: dict) -> str:
         parts = []
@@ -197,6 +267,8 @@ class Router:
                        ("screenshots", stats["images"])):
             if n:
                 parts.append(self.t(f"sent_{key}" + ("_1" if n == 1 else ""), n=n))
+        if self._thread or self._about:
+            parts.append(self.t("sent_conversation"))
         return ", ".join(parts) or self.t("sent_windows")
 
     # --- local ----------------------------------------------------------------------------------
@@ -214,7 +286,8 @@ class Router:
             context += self._describe(f, timeline)
         try:
             extra = f"\n\n{self._extra}" if self._extra else ""
-            text = self.local.generate(self._system, context + extra + f"\n\nQuestion: {question}",
+            text = self.local.generate(self._local_system(self._system),
+                                       context + extra + "\n\n" + self._local_thread() + f"Question: {question}",
                                        max_tokens=600, on_token=on_token)
         except LocalUnavailable as exc:
             log.warning("Local answer failed: %s", exc)

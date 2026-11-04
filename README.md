@@ -120,7 +120,8 @@ Edith stays out of the way. Rule: if something is not needed right now, it is no
   - **24 hours**: the day's **text** archive (what windows said, what was heard, field values,
     descriptions of screens with little text) and the block summaries;
   - **12 months**: important moments only (dates and deadlines, exams, tasks, appointments,
-    payments, "this is in the exam"), so nothing that would hurt to forget is lost.
+    payments, "this is in the exam"), so nothing that would hurt to forget is lost; also the
+    conversations with Edith and the lasting facts it knows about you.
   A question sends only the lines that match it. All of it is deleted by "Delete everything now".
 - **Day archive** (`memory/archive.py`): before the 10-minute buffer forgets, its text is
   copied to the day archive, with no model, so no detail is dropped because a model judged it
@@ -361,6 +362,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | Undo Edith's last edit (checked, refused if the user changed the text since); presentation-mode outline | done |
 | Day text archive (24 h) searched by questions; descriptions of screens with little text; important moments kept 12 months | done |
 | Conversation: small talk without memory, doubts about the current screen, automation guide | done |
+| Companion memory: the conversation thread, past conversations found by questions, lasting facts about the user ("remember that ..." / "forget that ...") | done |
 | Network audit script; Delete everything now; rotating logs without captured content; errors logged, never fatal; 3-screen onboarding | done |
 | Activity view with sparklines (RAM, VRAM, memory activity) | done |
 | Light/dark theme following Windows live, with a fade | done |

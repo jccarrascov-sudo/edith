@@ -53,6 +53,7 @@ DEFAULTS: dict[str, dict] = {
               "load_timeout_s": 300},
     "notes": {"enabled": True, "summary_minutes": 10, "check_s": 30, "keep_hours": 24,
               "important_keep_days": 365},
+    "companion": {"history_turns": 6, "history_hours": 3, "keep_days": 365, "learn": True},
     "archive": {"keep_hours": 24, "describe_every_s": 300, "describe_below_chars": 150,
                 "max_chars_cloud": 4000, "max_chars_local": 2500},
     "ui": {"language": "en", "show_details": False},
@@ -72,6 +73,7 @@ class Config:
     local: dict
     notes: dict
     archive: dict
+    companion: dict
     ui: dict
     network: dict
     exclude: dict

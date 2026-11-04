@@ -23,10 +23,13 @@ heard while one is in front is dropped.
 | Screenshots, audio, the raw timeline | 10 minutes |
 | The day's text archive (screen text, what was heard, field values, descriptions of screens with little text) and block summaries | 24 hours |
 | Important moments: dates and deadlines, exams, tasks, appointments, payments | 12 months |
+| Conversations with Edith, and lasting facts about you ("remember that ...", or noted by the local model from what you say about yourself; "forget that ..." removes one) | 12 months |
 
 **Delete everything now** (in the panel's options, two clicks) removes all of it at once:
-screenshots, audio, the timeline, the day's text, the notes and the important moments, and the
-plans learned from demonstrations. Verified machines (`tools/`) and the cost record are kept.
+screenshots, audio, the timeline, the day's text, the notes and the important moments, the conversations
+and what Edith knows about you, and the plans learned from demonstrations. Verified machines (`tools/`) and the cost record are kept.
+A request also sends the last few exchanges (3 hours at most), the facts about you and past
+exchanges that match it; the gray line then says "your question and our conversation".
 **Pause memory** stops all recording; the audio button stops listening to the speakers.
 
 Logs (`state/logs/edith.log`, rotating, 1 MB x 4) hold operational events only: no screen

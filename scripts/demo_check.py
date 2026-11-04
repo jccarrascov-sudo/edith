@@ -18,6 +18,10 @@ made by hand; a new Edith home) and goes through the same Agent the panel uses:
                  last letter shows S/ and keeps lesson a; Enter
  10. applied-b   "para Café Señorial" -> S/ and lesson a, < 3 s, Esc
  11. discard     Discard lesson b -> the next preview says USD again and keeps lesson a
+ 12. replan      a bug is forced into the recipe for one client ("para Taller Ñuñoa"): it fails
+                 twice, Muse Spark replans from the error, the letter is right, the bug is gone
+ 13. level-down  the bug again, and this time the replan is forced to fail too: the recipe is
+                 compiled again at level 2 (Word through COM) and the letter is right
 The real Muse Spark API is used for compiling (cost printed); running a recipe calls no model.
 Exit code 0 only if every step of every run is OK.
 """
@@ -167,6 +171,7 @@ def one_run(user: Path) -> list[tuple[str, bool, str]]:
         out.append(("several", ok, f"{len(p.outputs) if p else 0} letters, {p.seconds if p else 0:.2f} s, Esc -> "
                     f"{(d.replies or [''])[-1][:40]}"))
         lessons_steps(a, d, user, out)
+        escalation_steps(a, d, user, out)
     except Exception as exc:
         out.append(("error", False, f"{type(exc).__name__}: {exc}"[:200]))
     finally:
@@ -238,6 +243,68 @@ def lessons_steps(a, d, user: Path, out: list) -> None:
     txt = paragraphs(p) if p else []
     ok = p is not None and any("USD " in x for x in txt) and "Kind regards," in txt
     out.append(("discard", ok, next((x for x in txt if "USD" in x or "S/" in x), "")[:70]))
+
+
+FORCED = "cannot read this row (forced by the demo-check)"
+
+
+def force_bug(a) -> None:
+    """Put a failure for one client into the recipe's program, as the first line of run()."""
+    import ast
+
+    r = a.recipes.all()[0]
+    program = a.recipes.program(r)
+    fn = next(n for n in ast.parse(program).body if isinstance(n, ast.FunctionDef) and n.name == "run")
+    lines = program.splitlines()
+    first = fn.body[0]
+    if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant):
+        first = fn.body[1]                                       # after the docstring
+    indent = " " * first.col_offset
+    lines.insert(first.lineno - 1, f'{indent}if str(key).strip().lower().startswith("taller"):\n'
+                                   f'{indent}    raise ValueError("{FORCED}")')
+    a.recipes.save(r, "\n".join(lines) + "\n")
+
+
+def escalation_steps(a, d, user: Path, out: list) -> None:
+    from edith.recipes import docs, escalate
+
+    seen = []
+    a.status.connect(lambda line: seen.append(line))
+
+    def check(step: str, level: int):
+        p = d.preview
+        txt = docs.shape(p.outputs[0].made).text() if p else ""
+        r = a.recipes.all()[0]
+        ok = (p is not None and "Dear Taller Ñuñoa," in txt and FORCED not in a.recipes.program(r)
+              and r.level == level and any(a.t("escalate_replan") == x for x in seen))
+        went = [x for x in seen if x.startswith(("Falló", "Probándolo"))]
+        out.append((step, ok, f"level {r.level} · " + " → ".join(dict.fromkeys(went)) + (f" · {p.failed}" if p and p.failed else "")))
+
+    # 12. replan at the same level
+    force_bug(a)
+    seen.clear()
+    d.do("para Taller Ñuñoa", decide=False)
+    check("replan", a.recipes.all()[0].level)
+    # 13. the replan is forced to fail -> the next level
+    force_bug(a)
+    seen.clear()
+    from edith.recipes.learn import _muse
+
+    real = _muse(a.cfg)
+    buggy = a.recipes.program(a.recipes.all()[0])
+
+    def ask(system, user):              # the replan keeps the bug; compiling at level 2 is real
+        return f"```python\n{buggy}```" if system.startswith("A Python program that redoes") else real(system, user)
+
+    def escalator(r, key, error, line):
+        return escalate.escalate(a.cfg, a.recipes, r, key, error, line, ask=ask,
+                                 on_status=lambda k, kw: a.status.emit(a.t(k, **kw)))
+    keep, a.recipe_runner.escalator = a.recipe_runner.escalator, escalator
+    try:
+        d.do("para Taller Ñuñoa", decide=False, timeout=600)
+    finally:
+        a.recipe_runner.escalator = keep
+    check("level-down", 2)
 
 
 def pump() -> None:

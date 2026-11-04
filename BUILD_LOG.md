@@ -469,3 +469,21 @@ Saludos,". 196 tests pass.
 - Demo-check now 11 steps (lesson-a, applied-a, lesson-b, applied-b, discard): 5/5 runs, 11 steps each (lesson a 19-22 s, lesson b 16-22 s, next runs 0.44-0.62 s).
 - Tests: 6 new (edit applied with formatting kept, "corrige" recognized, a lesson after one
   correction, an instruction that changes nothing is refused, discard restores): 215 pass.
+
+## Priority 3 (Nov 4): escalation to Muse Spark
+- `recipes/escalate.py`: a row that fails twice (`Runner.prepare` retries once) -> Muse Spark
+  replans from the error, its line and the row (2 tries); the fix must keep the proof identical
+  and work on the failing row and two more. If not, the recipe is compiled again from its proof
+  at the next level (`compile_demo(levels=(n,))` into a scratch store) and checked the same way.
+  No level left -> `GaveUp` with a one-line reason; the program is never half-changed. Each fix is
+  kept as a version, like lessons.
+- Demo-check steps 12-13: a failure forced into the recipe for one client; then the same with the
+  replan forced to keep the bug (the level-2 compile is real). The first live run failed step 13:
+  pywin32 ignores keyword arguments to COM methods, so Word's `Find.Execute(FindText=...,
+  ReplaceWith=..., Replace=2)` found the text and replaced nothing; reproduced by hand
+  (keywords: "Dear CLIENT,"; positional: replaced). The level-2 prompt now shows the positional
+  call and a fresh range per replacement: 3/3 level-2 compiles on the first attempt.
+- Demo-check (13 steps): 5/5 runs, 13 steps each (replan and level-down passed in every run).
+- Tests: 4 new (replan after two failures with the real error, failed replan -> level 2 for
+  real through Word COM, no level left -> one line and the program untouched, rows that work never
+  escalate): 219 pass.

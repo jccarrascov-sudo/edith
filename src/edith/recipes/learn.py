@@ -208,9 +208,16 @@ Rules:
   no network, no eval/exec, no dunder names, no deleting files.
 - Read the sheet with openpyxl.load_workbook(sheet, data_only=True); find the row whose
   "{key_column}" equals key (str(value).strip(), case-insensitive).
-- doc = word.Documents.Open(template, ReadOnly=True); use Find/Replace (doc.Content.Find.Execute
-  with Replace=2) or Range objects so the formatting is kept; set Font.Bold/Italic to match the
-  person's document; doc.SaveAs2(full path in out_dir, 16); doc.Close(0); return the path.
+- doc = word.Documents.Open(template, ReadOnly=True); replace with Find so the formatting is kept.
+  A Range SHRINKS to what Find found, so take a FRESH range for every replacement, and pass the
+  arguments POSITIONALLY (this COM bridge silently ignores keyword arguments: with them Execute
+  returns True and replaces nothing). The replacement text must be at most 255 characters:
+      rng = doc.Content
+      #                FindText MatchCase Whole Wildc Sounds AllForms Forward Wrap Format ReplaceWith Replace
+      rng.Find.Execute(old,     True,     False, False, False, False,  True,   1,   False,  new,        2)
+  Replace longer placeholders before shorter ones that they contain. Find/Replace keeps the
+  found text's formatting; set Font.Bold/Italic only where the person's document differs.
+  doc.SaveAs2(full path in out_dir, 16); doc.Close(0); return the path.
   Name the file like the person named theirs, from the row's values.
 - Never write any value of the person's row as a literal: every value comes from the row.
 - Other rows can differ: accents and ñ, amounts as numbers or text with commas, dates as datetime

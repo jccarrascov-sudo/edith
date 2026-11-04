@@ -348,6 +348,22 @@ letter (another client) has both in 0.44 s. "corrige: el monto va con S/ en vez 
 next letter says S/ and keeps the first lesson; Discard -> USD again. Demo-check with lessons:
 5/5 runs, 11 steps each (lesson a 19-22 s, lesson b 16-22 s, next runs 0.44-0.62 s).
 
+### Escalation (priority 3)
+
+A row that fails twice is handed to Muse Spark with the program, the error and its line, and the
+row's values; the fix must keep the user's own document identical and work on that row and two
+more. If the replan fails too, the recipe is compiled again from its proof at the next level of
+the cascade (level 1 -> level 2, Word through COM). When no level is left, Edith stops and says
+why in one line. A fix that passes is kept as a new version (the previous one stays). The panel
+shows each step in its gray status line.
+
+Found on the way: the first live level-down never passed: pywin32 silently ignores keyword
+arguments to COM methods, so `Find.Execute(FindText=..., ReplaceWith=..., Replace=2)` returned
+True and replaced nothing ("Dear CLIENT,"). The level-2 prompt now asks for positional arguments
+and a fresh range per replacement: 3/3 level-2 compiles verified on the first attempt (0/2
+before). Demo-check with escalation (a bug forced for one client; then the replan forced to fail
+too): 5/5 runs, 13 steps each (replan and level-down passed in every run).
+
 ## Demo environment
 
 A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitious invoices
@@ -400,6 +416,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 |---|---|
 | Recipes (stage A): demo finding, compile with Muse Spark at levels 1-2, verification on copies, sandbox (AST whitelist + audit hook), replay with preview/undo, recipe list, Ctrl+Alt+R / Ctrl+Alt+Q, demo-check | done |
 | Lessons (priority 2): correct the preview or "corrige: …" -> the recipe's program changes and is re-verified, "Learned: …" with Discard, applied on the next run | done |
+| Escalation (priority 3): a row failing twice -> Muse Spark replans from the error -> next level of the cascade -> a one-line stop | done |
 | Local memory: change-detected capture, mouse-only click log, UIA field values, system audio, 10-min buffer, exclusions | done |
 | `ask` over the last 10 minutes, with token optimizations | done |
 | Learning backwards: demo episode finder, spreadsheet row matcher, Muse Spark block plan + check | done |

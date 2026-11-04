@@ -57,6 +57,8 @@ TEXT = {
         "recipe_delete": "Delete",
         "stopped": "Stopped. Nothing else will run.",
         "fix_label": "Correct",
+        "escalate_replan": "It failed twice on that row; Muse Spark is replanning it…",
+        "escalate_level": "Trying it at level {level}…",
         "lesson_learning": "Learning from your correction…",
         "lesson_learned": "Learned: {text}",
         "lesson_discard": "Discard",
@@ -207,6 +209,8 @@ TEXT = {
         "recipe_delete": "Borrar",
         "stopped": "Detenido. No se ejecutará nada más.",
         "fix_label": "Corregir",
+        "escalate_replan": "Falló dos veces en esa fila; Muse Spark lo está replanificando…",
+        "escalate_level": "Probándolo en el nivel {level}…",
         "lesson_learning": "Aprendiendo de tu corrección…",
         "lesson_learned": "Aprendí: {text}",
         "lesson_discard": "Descartar",
@@ -437,6 +441,13 @@ class Agent(QObject):
         from ..recipes.lessons import LessonStore
 
         self.lessons = LessonStore(self.recipes)
+
+        def escalator(r, key, error, line):
+            from ..recipes.escalate import escalate
+
+            return escalate(cfg, self.recipes, r, key, error, line,
+                            on_status=lambda k, kw: self.status.emit(self.t(k, **kw)))
+        self.recipe_runner.escalator = escalator          # a row failing twice -> Muse Spark
         self._edited: str | None = None         # the user's version of a recipe's result
         self._last_run = None                   # (recipe id, key, file made) for "corrige: ..."
         self._last_undo = "edit"               # what Undo undoes: Edith's last edit or recipe run

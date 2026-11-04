@@ -123,6 +123,8 @@ class Runner:
     def __init__(self, store: RecipeStore):
         self.store = store
         self.last: Applied | None = None
+        # (recipe, key, error, line) -> a fixed recipe, or raises escalate.GaveUp; set by the app
+        self.escalator = None
 
     def proof_ok(self, r: Recipe, program: str, work: Path) -> tuple[bool, str]:
         proof = self.store.proof(r)
@@ -152,14 +154,27 @@ class Runner:
             ok, why = proof.result()
             if not ok:
                 raise RuntimeError(f"proof: {why}")
-            outputs, failed = [], []
-            for k, job in jobs.items():
-                o = job.result()
-                if o.ok:
-                    made = Path(o.out)
-                    outputs.append(Output(k, made, Path(r.out_dir) / made.name))
-                else:
-                    failed.append((k, o.error))
+            results = {k: job.result() for k, job in jobs.items()}
+        outputs, failed = [], []
+        for i, k in enumerate(m.keys[:30]):
+            o = results[k]
+            if not o.ok:                                # a second try (a passing glitch)
+                o = sandbox.run(program, r.level, r.sheet, r.template, k, str(work / f"k{i}b"))
+            if not o.ok and self.escalator is not None:  # failed twice: Muse Spark takes over
+                from .escalate import GaveUp
+
+                try:
+                    r = self.escalator(r, k, o.error, o.line)
+                    program = self.store.program(r)
+                    o = sandbox.run(program, r.level, r.sheet, r.template, k, str(work / f"k{i}c"))
+                except GaveUp as exc:
+                    failed.append((k, exc.line))
+                    continue
+            if o.ok:
+                made = Path(o.out)
+                outputs.append(Output(k, made, Path(r.out_dir) / made.name))
+            else:
+                failed.append((k, o.error))
         if not outputs:
             raise RuntimeError(failed[0][1] if failed else "nothing was made")
         seconds = time.monotonic() - t0

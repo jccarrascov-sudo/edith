@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "demo"))
 OUT = ROOT / "demo-clips"
-CASE = ROOT / "demo" / "data" / "Cobranzas"           # the "office folder" of the video (test files only)
+CASE = ROOT / "demo" / "data" / "Cobranzas noviembre"           # the "office folder" of the video (test files only)
 PY = ROOT / ".venv" / "Scripts" / "pythonw.exe"
 user32 = ctypes.windll.user32
 
@@ -163,6 +163,30 @@ def windows_of(pid: int) -> list[int]:
     return out
 
 
+class _PE(ctypes.Structure):
+    _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD), ("th32ProcessID", wintypes.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wintypes.DWORD),
+                ("cntThreads", wintypes.DWORD), ("th32ParentProcessID", wintypes.DWORD),
+                ("pcPriClassBase", ctypes.c_long), ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+
+def children(pid: int) -> list[int]:
+    """The processes started by `pid` (Toolhelp32 snapshot)."""
+    k32 = ctypes.windll.kernel32
+    snap = k32.CreateToolhelp32Snapshot(0x2, 0)
+    out = []
+    try:
+        e = _PE(dwSize=ctypes.sizeof(_PE))
+        ok = k32.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            if e.th32ParentProcessID == pid:
+                out.append(e.th32ProcessID)
+            ok = k32.Process32NextW(snap, ctypes.byref(e))
+    finally:
+        k32.CloseHandle(snap)
+    return out
+
+
 def find_window(part: str, wait: float = 20) -> int:
     end = time.monotonic() + wait
     while time.monotonic() < end:
@@ -213,10 +237,13 @@ class Edith:
         env.update({k: v for k, v in dotenv_values(ROOT / ".env").items() if v})   # the key stays in memory only
         self.p = subprocess.Popen([str(PY), "-c", "from edith.ui.app import launch; launch()"], env=env,
                                   cwd=str(ROOT))
-        end = time.monotonic() + 40
-        while time.monotonic() < end and not windows_of(self.p.pid):
+        # The venv's pythonw.exe is a launcher: Edith's windows belong to the Python it starts.
+        self.pid = 0
+        end = time.monotonic() + 60
+        while time.monotonic() < end and not self.pid:
+            self.pid = next((p for p in [self.p.pid, *children(self.p.pid)] if windows_of(p)), 0)
             time.sleep(0.5)
-        if not windows_of(self.p.pid):
+        if not self.pid:
             raise SystemExit("Edith did not start")
         time.sleep(4)
 
@@ -224,7 +251,7 @@ class Edith:
         import uiautomation as auto
 
         parts = []
-        for h in windows_of(self.p.pid):
+        for h in windows_of(self.pid):
             try:
                 root = auto.ControlFromHandle(h)
                 for c, _d in auto.WalkControl(root, includeTop=True, maxDepth=12):
@@ -254,28 +281,60 @@ class Edith:
             time.sleep(0.7)
         raise SceneError(f"Edith never showed {needles or pattern}")
 
+    def panel_open(self) -> bool:
+        """The panel is out (wider than the dot and its glow) and in front."""
+        for h in windows_of(self.pid):
+            r = wintypes.RECT()
+            user32.GetWindowRect(h, ctypes.byref(r))
+            if r.right - r.left > 250 and fg()[2] == self.pid:
+                return True
+        return False
+
     def open_panel(self) -> None:
-        key("ctrl", "alt", "e")
-        guard(pid=self.p.pid)
-        time.sleep(0.6)
+        # The shortcut toggles: press it until the panel is out and in front (seen live: one press
+        # closed a panel still open from the scene before, and the request went nowhere).
+        for _ in range(4):
+            if self.panel_open():
+                break
+            key("ctrl", "alt", "e")
+            time.sleep(0.9)
+        if not self.panel_open():
+            raise SceneError("Edith's panel did not open")
+        guard(pid=self.pid)
+        time.sleep(0.4)
+
+    def lessons(self) -> int:
+        f = self.home / "state" / "lessons.jsonl"
+        return len(f.read_text(encoding="utf-8").splitlines()) if f.exists() else 0
 
     def ask(self, request: str) -> None:
         self.open_panel()
-        type_human(request, check=lambda: guard(pid=self.p.pid, wait=2))
+        type_human(request, check=lambda: guard(pid=self.pid, wait=2))
         time.sleep(0.4)
-        guard(pid=self.p.pid)
+        guard(pid=self.pid)
         key("enter")
 
     def press(self, k: str) -> None:
-        guard(pid=self.p.pid)
+        guard(pid=self.pid)
         key(k)
 
     def close(self) -> None:
-        self.p.terminate()                                # our own process
+        """End this script's Edith and everything it started (its llama-server too)."""
+        tree, todo = [], [self.p.pid]
+        while todo:
+            pid = todo.pop()
+            tree.append(pid)
+            todo += children(pid)
+        k32 = ctypes.windll.kernel32
+        for pid in reversed(tree):                        # children first
+            h = k32.OpenProcess(0x0001, False, pid)       # PROCESS_TERMINATE
+            if h:
+                k32.TerminateProcess(h, 0)
+                k32.CloseHandle(h)
         try:
             self.p.wait(10)
         except subprocess.TimeoutExpired:
-            self.p.kill()
+            pass
 
 
 # --- the desktop: put in shape, then back as it was ----------------------------------------------------
@@ -335,12 +394,19 @@ class Desktop:
         _set(NOTIF, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0)          # Do Not Disturb (no toasts)
         _set(THEME, "AppsUseLightTheme", 0)                          # dark: Edith follows it live
         _icons(False)
+        # A plain background while recording (the wallpaper may be personal). fWinIni=2: not saved,
+        # so Windows' own setting is untouched and comes back even if this script is stopped.
+        buf = ctypes.create_unicode_buffer(520)
+        user32.SystemParametersInfoW(0x0073, 520, buf, 0)            # SPI_GETDESKWALLPAPER
+        self.wallpaper = buf.value
+        user32.SystemParametersInfoW(0x0014, 0, "", 2)               # SPI_SETDESKWALLPAPER: none
         self.shell = win32com.client.Dispatch("Shell.Application")
         self.shell.MinimizeAll()
         time.sleep(1.5)
         return self
 
     def __exit__(self, *exc):
+        user32.SystemParametersInfoW(0x0014, 0, self.wallpaper, 2)
         _set(NOTIF, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", self.toasts)
         _set(THEME, "AppsUseLightTheme", self.light)
         _icons(self.icons_shown)
@@ -352,13 +418,39 @@ class Desktop:
 
 # --- the case -------------------------------------------------------------------------------------------
 
+def _modern(path: Path) -> None:
+    """Save the template in Word's current format (a hidden Word of its own, this file only), so
+    Word neither says "Modo de compatibilidad" nor asks to upgrade it when it is saved."""
+    import pythoncom
+    import win32com.client
+
+    pythoncom.CoInitialize()
+    w = win32com.client.DispatchEx("Word.Application")
+    w.Visible = False
+    w.DisplayAlerts = 0
+    try:
+        d = w.Documents.Open(str(path))
+        d.Convert()
+        d.Save()
+        d.Close(0)
+    finally:
+        w.Quit()
+
+
 def prepare_case() -> dict:
     import make_letters
     from edith.recipes.docs import sheet_rows
 
-    if CASE.exists():
-        shutil.rmtree(CASE)
-    files = make_letters.make(CASE)
+    folder = CASE
+    for i in range(2, 9):                                  # a folder still held by Word: use the next one
+        if not folder.exists():
+            break
+        shutil.rmtree(folder, ignore_errors=True)
+        if not folder.exists():
+            break
+        folder = CASE.with_name(f"{CASE.name} {i}")
+    files = make_letters.make(folder)
+    _modern(files["template"])
     _h, rows = sheet_rows(files["sheet"])
     by = {str(r["Client"]).strip(): r for r in rows}
     first = rows[0]
@@ -399,7 +491,27 @@ def class_video() -> Path:
 # --- scenes -------------------------------------------------------------------------------------------
 
 def scene_1(ctx):
-    time.sleep(0.5)
+    ctx["desktop"].shell.MinimizeAll()                     # anything that came back since
+    time.sleep(1.5)
+
+
+def _word_notice(owner_has: str) -> int:
+    """A "Microsoft Word" message box owned by this script's document window, else 0."""
+    found = []
+
+    def title(h):
+        n = user32.GetWindowTextLengthW(h)
+        b = ctypes.create_unicode_buffer(n + 1)
+        user32.GetWindowTextW(h, b, n + 1)
+        return b.value
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(h, _):
+        if user32.IsWindowVisible(h) and title(h) == "Microsoft Word" and owner_has in title(user32.GetWindow(h, 4)):
+            found.append(h)
+        return True
+    user32.EnumWindows(visit, 0)
+    return found[0] if found else 0
 
 
 def scene_2(ctx):
@@ -442,9 +554,14 @@ def scene_2(ctx):
     type_human(str(result), check=lambda: guard(("Guardar como", "Save As"), wait=2))
     time.sleep(0.5)
     key("enter")
-    end = time.monotonic() + 20
+    end = time.monotonic() + 25
     while not result.exists() and time.monotonic() < end:
-        time.sleep(0.3)
+        notice = _word_notice("Payment reminder")          # "the document will be upgraded": Aceptar
+        if notice:
+            front(notice)
+            if fg()[0] == notice:
+                key("enter")
+        time.sleep(0.5)
     if not result.exists():
         raise SceneError("the letter was not saved")
     ctx["result"] = result
@@ -482,10 +599,17 @@ def scene_5(ctx):
     edith.ask("haz lo mismo para Golden Spoon Supplies")
     edith.wait_for("Hecho en", "Done in", timeout=60)
     time.sleep(2)
-    type_human("corrige: el monto va con S/ en vez de USD", check=lambda: guard(pid=edith.p.pid, wait=2))
+    before = edith.lessons()
+    edith.open_panel()                                      # the preview waits in the panel
+    type_human("corrige: el monto va con S/ en vez de USD", check=lambda: guard(pid=edith.pid, wait=2))
     edith.press("enter")
-    edith.wait_for(pattern=r"(Aprendí|Learned): [^«\"]", timeout=90)   # a lesson, not "Aprendí: «recipe»"
-    time.sleep(2.5)
+    end = time.monotonic() + 90                            # the lesson is in Edith's lessons file
+    while edith.lessons() <= before and time.monotonic() < end:
+        time.sleep(0.7)
+    if edith.lessons() <= before:
+        raise SceneError("no lesson was learned")
+    edith.wait_for("Hecho en", "Done in", timeout=60)      # the corrected preview
+    time.sleep(3)
     edith.press("enter")                                    # keep the corrected letter
     time.sleep(1.5)
     edith.ask("ahora para Panadería Ñandú")
@@ -513,7 +637,7 @@ def scene_7(ctx):
 
     edith = ctx["edith"]
     edith.open_panel()
-    hs = windows_of(edith.p.pid)
+    hs = windows_of(edith.pid)
     rects = []
     for h in hs:
         r = wintypes.RECT()
@@ -523,7 +647,7 @@ def scene_7(ctx):
     move_human((panel.left + panel.right) // 2, (panel.top + panel.bottom) // 2)   # the options appear on hover
     time.sleep(1)
     button = None
-    for h in windows_of(edith.p.pid):
+    for h in windows_of(edith.pid):
         for c, _d in auto.WalkControl(auto.ControlFromHandle(h), includeTop=True, maxDepth=12):
             if c.Name in ("Actividad", "Activity"):
                 button = c
@@ -578,6 +702,7 @@ def main() -> int:
     import pyautogui
 
     pyautogui.FAILSAFE = True
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     OUT.mkdir(exist_ok=True)
     wanted = [int(x) for x in args.only.split(",")]
     ok, failed, notes = {}, {}, {}
@@ -585,7 +710,8 @@ def main() -> int:
     class_video()
     print("Recording starts in 5 s. Do not touch the mouse or keyboard; a screen corner aborts.")
     time.sleep(5)
-    with Desktop():
+    with Desktop() as desk:
+        ctx["desktop"] = desk
         ctx["edith"] = Edith(args.lang)
         try:
             for n in wanted:
@@ -627,6 +753,12 @@ def main() -> int:
 
 def _close_case(ctx) -> None:
     """Close only the test document and sheet this script opened (never saving them)."""
+    for _ in range(3):                                     # a notice of ours would block Word's COM
+        notice = _word_notice("Payment reminder")
+        if not notice:
+            break
+        user32.PostMessageW(notice, 0x0010, 0, 0)         # WM_CLOSE = Cancel
+        time.sleep(1)
     try:
         import pythoncom
         import win32com.client

@@ -45,3 +45,5 @@ capturas-ui/
 # Generated demo data (portal DB, invoices.xlsx)
 demo/data/
 results/logs/
+demo-clips/
+demo/data/Cobranzas/

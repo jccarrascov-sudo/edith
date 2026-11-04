@@ -545,5 +545,5 @@ buffer. Causes and fixes:
   rest of the file; own 6000-char budget). Live on a test Word document: body read in 1.7 s.
 - Live with Muse Spark on an isolated memory: the 7 questions of that conversation, 0 denials;
   "regrésalo a como estaba" -> replace with the earlier text. Tests: 9 new.
-- memory_check after the fix: api mode all OK; offline mode hung on the local model (llama-server, low RAM with
-  Ollama running) and was stopped; it passed this morning and the fix does not touch that path.
+- memory_check after the fix: all OK in the three modes (api, offline with the local model, budget
+  reached), 3.5 min. (A first run was stopped after one minute by mistake and wrongly noted as hung.)

@@ -30,6 +30,32 @@ TEXT = {
         "placeholder": "Ask about your day, or say “do the rest”",
         "thinking": "Thinking…",
         "rewinding": "Looking through the last minutes…",
+        "learn_finding": "Looking at what you just did…",
+        "learn_compiling": "Muse Spark is compiling it (level {level})…",
+        "learn_verifying": "Checking it against your document…",
+        "learn_correcting": "Correcting it ({n} of 2)…",
+        "learn_done": "Learned: \u201c{name}\u201d. Ask me \u201cdo the same for …\u201d with another {column}.",
+        "learn_foot": "Compiled by Muse Spark · Level {level} · checked with your document and 2 more rows",
+        "learn_no_doc": "I didn't see a Word document saved in the last {minutes} min. Do it once by hand, save it, and ask me again.",
+        "learn_no_template": "I found \u201c{doc}\u201d but not the document it started from. Open the template first, then save yours with a new name.",
+        "learn_no_sheet": "I didn't see the Excel sheet the values came from. Open it and ask me again.",
+        "learn_no_row": "None of the rows of {sheet} appear in your document.",
+        "learn_no_key": "I couldn't tell which column of {sheet} tells the rows apart.",
+        "learn_failed": "I couldn't learn it: {why}",
+        "recipe_running": "Doing it on a copy…",
+        "recipe_foot": "Compiled by Muse Spark · Level {level} · Done in {s} s",
+        "recipe_more": "{name} and {n} more",
+        "recipe_which": "Which one: {options}?",
+        "recipe_done": "Done: {n} in {folder}. You can undo it from here.",
+        "recipe_docs": "{n} documents", "recipe_docs_1": "1 document",
+        "recipe_discarded": "Discarded. Nothing was saved.",
+        "recipe_failed": "I couldn't do it: {why}",
+        "recipe_some_failed": "{n} couldn't be made ({first}).",
+        "recipes_label": "Recipes",
+        "recipes_none": "No recipes yet. Do a task once by hand and tell me \u201clearn this\u201d.",
+        "recipe_line": "{name} · Level {level} · used {uses}×",
+        "recipe_delete": "Delete",
+        "stopped": "Stopped. Nothing else will run.",
         "no_demo": "I can repeat a form you filled from a spreadsheet, and I don't see one in the last {minutes} "
                    "minutes. Fill one by hand, then ask me again. For anything else, I can tell you what you did, "
                    "but I can't repeat it yet.",
@@ -146,6 +172,32 @@ TEXT = {
         "placeholder": "Pregunta por tu día, o di “haz el resto”",
         "thinking": "Pensando…",
         "rewinding": "Revisando los últimos minutos…",
+        "learn_finding": "Buscando lo que acabas de hacer…",
+        "learn_compiling": "Muse Spark lo está compilando (nivel {level})…",
+        "learn_verifying": "Comprobándolo con tu documento…",
+        "learn_correcting": "Corrigiéndolo ({n} de 2)…",
+        "learn_done": "Aprendí: \u00ab{name}\u00bb. Pídeme \u00abhaz lo mismo para …\u00bb con otro valor de {column}.",
+        "learn_foot": "Compilado por Muse Spark · Nivel {level} · comprobado con tu documento y 2 filas más",
+        "learn_no_doc": "No vi un documento de Word guardado en los últimos {minutes} min. Hazlo una vez a mano, guárdalo y vuelve a pedírmelo.",
+        "learn_no_template": "Encontré \u00ab{doc}\u00bb, pero no el documento del que partió. Abre primero la plantilla y guarda el tuyo con otro nombre.",
+        "learn_no_sheet": "No vi la hoja de Excel de donde salieron los datos. Ábrela y vuelve a pedírmelo.",
+        "learn_no_row": "Ninguna fila de {sheet} aparece en tu documento.",
+        "learn_no_key": "No supe qué columna de {sheet} distingue cada fila.",
+        "learn_failed": "No pude aprenderlo: {why}",
+        "recipe_running": "Haciéndolo en una copia…",
+        "recipe_foot": "Compilado por Muse Spark · Nivel {level} · Hecho en {s} s",
+        "recipe_more": "{name} y {n} más",
+        "recipe_which": "¿Cuál: {options}?",
+        "recipe_done": "Listo: {n} en {folder}. Puedes deshacerlo desde aquí.",
+        "recipe_docs": "{n} documentos", "recipe_docs_1": "1 documento",
+        "recipe_discarded": "Descartado. No se guardó nada.",
+        "recipe_failed": "No pude hacerlo: {why}",
+        "recipe_some_failed": "{n} no se pudieron hacer ({first}).",
+        "recipes_label": "Recetas",
+        "recipes_none": "Aún no hay recetas. Haz una tarea una vez a mano y dime \u00abaprende esto\u00bb.",
+        "recipe_line": "{name} · Nivel {level} · usada {uses}×",
+        "recipe_delete": "Borrar",
+        "stopped": "Detenido. No se ejecutará nada más.",
         "no_demo": "Puedo repetir un formulario que llenaste desde una hoja de cálculo, y no veo ninguno en los "
                    "últimos {minutes} minutos. Llena uno a mano y vuelve a pedírmelo. Otras acciones te las puedo "
                    "describir, pero todavía no repetir.",
@@ -339,6 +391,7 @@ class Agent(QObject):
     preview = Signal(object)  # an edit to confirm (brain.edit.Proposal), or None when it is gone
     outline = Signal(object)  # presentation mode: the screen rectangle Edith acts on, or None
     undoable = Signal(bool)   # an applied edit can be undone
+    result_preview = Signal(object)  # a recipe's result to confirm (recipes.run.Preview), or None
     _ui = Signal(object)      # run a function on the UI thread (clipboard, keys)
     reply = Signal(str)       # the answer under the text field (repeated while it streams)
     footnote = Signal(str)    # gray line under the answer: what was sent, or "Answered locally"
@@ -359,6 +412,13 @@ class Agent(QObject):
 
         self.typist = Typist()
         self.target = None                     # the field in front when the panel was opened
+        from ..recipes.run import Runner
+        from ..recipes.store import RecipeStore
+
+        self.recipes = RecipeStore(cfg)
+        self.recipe_runner = Runner(self.recipes)
+        self._last_undo = "edit"               # what Undo undoes: Edith's last edit or recipe run
+        self._stopped = False
         self._ui.connect(lambda job: job())
 
     def t(self, key: str, **kw) -> str:
@@ -371,9 +431,14 @@ class Agent(QObject):
             return
         from ..brain.edit import is_edit
 
-        target = (self._cant if BARE_ORDER.match(request) else self._task if is_task(request)
+        from ..recipes.run import LEARN
+
+        target = (self._learn if LEARN.search(request) else self._cant if BARE_ORDER.match(request)
+                  else self._task if is_task(request)
                   else self._undo if UNDO.search(request)
                   else self._edit if is_edit(request) else self._ask)
+        if target in (self._task, self._edit, self._ask, self._cant):
+            target = self._recipe_or(target)
         self.footnote.emit("")
         self._set_busy(True)
         threading.Thread(target=self._guarded, args=(target, request), daemon=True).start()
@@ -398,6 +463,79 @@ class Agent(QObject):
             self.awaiting = False
             self.status.emit("")
             self._set_busy(False)
+
+    def stop(self) -> None:
+        """The emergency shortcut: kill whatever runs and discard what waits for Enter."""
+        from ..recipes import sandbox
+
+        self._stopped = True
+        sandbox.stop_all()
+        self.decide(False)
+        self.status.emit("")
+        self.reply.emit(self.t("stopped"))
+
+    # --- recipes --------------------------------------------------------------------------------
+    def _recipe_or(self, fallback):
+        """A request a recipe can do ("do the same for Ñandú") runs the recipe; others go on."""
+        def route(request: str) -> None:
+            from ..recipes.run import match
+
+            recipes = self.recipes.all()
+            m = match(request, recipes) if recipes else None
+            if m is None or not (m.keys or m.ambiguous):
+                fallback(request)
+            elif m.ambiguous:
+                self.reply.emit(self.t("recipe_which", options=", ".join(m.ambiguous[:4])))
+            else:
+                self._recipe(m)
+        return route
+
+    def _learn(self, _request: str = "") -> None:
+        from ..recipes import learn
+
+        self.status.emit(self.t("learn_finding"))
+        try:
+            demo = learn.find_demo(30)
+            r = learn.compile_demo(self.cfg, demo, store=self.recipes,
+                                   on_status=lambda key, kw: self.status.emit(self.t(key, **kw)))
+        except learn.CannotLearn as exc:
+            self.reply.emit(self.t(exc.key, **exc.kw))
+            return
+        self.reply.emit(self.t("learn_done", name=r.name, column=r.key_column))
+        self.footnote.emit(self.t("learn_foot", level=r.level))
+
+    def _recipe(self, m) -> None:
+        import os
+
+        self._stopped = False
+        self.status.emit(self.t("recipe_running"))
+        try:
+            p = self.recipe_runner.prepare(m)
+        except Exception as exc:
+            if not self._stopped:
+                self.reply.emit(self.t("recipe_failed", why=str(exc)[:160]))
+            return
+        if self._stopped:
+            return
+        self.status.emit("")
+        self._decision.clear()
+        self.awaiting = True
+        self.result_preview.emit(p)
+        self._decision.wait()
+        self.awaiting = False
+        self.result_preview.emit(None)
+        if not self._confirmed:
+            self.reply.emit(self.t("recipe_discarded"))
+            return
+        self.recipe_runner.apply(p)
+        self._last_undo = "recipe"
+        self.undoable.emit(True)
+        n = len(p.outputs)
+        what = self.t("recipe_docs_1") if n == 1 else self.t("recipe_docs", n=n)
+        done = self.t("recipe_done", n=what, folder=os.path.basename(p.recipe.out_dir) or p.recipe.out_dir)
+        if p.failed:
+            done += " " + self.t("recipe_some_failed", n=len(p.failed), first=p.failed[0][1][:80])
+        self.reply.emit(done)
 
     def _cant(self, request: str) -> None:
         self.reply.emit(self.t("cant_act"))
@@ -477,12 +615,21 @@ class Agent(QObject):
             self.reply.emit(self.t("edit_discarded"))
             return
         ok, why = self._on_ui(lambda: self.typist.apply(t, p.mode, p.text))
+        if ok:
+            self._last_undo = "edit"
         self.preview.emit(None)
         self.outline.emit(None)
         self.undoable.emit(self.typist.last is not None)
         self.reply.emit(self.t("edit_done") if ok else self.t("edit_failed", why=self.t(f"why_edit_{why}")))
 
     def _undo(self, _request: str = "") -> None:
+        if self._last_undo == "recipe" and self.recipe_runner.last is not None:
+            ok, why = self.recipe_runner.undo()
+            if ok:
+                self._last_undo = "edit"
+            self.undoable.emit(self.recipe_runner.last is not None or self.typist.last is not None)
+            self.reply.emit(self.t("undo_done") if ok else self.t("undo_failed", why=self.t(f"why_undo_{why}")))
+            return
         ok, why = self._on_ui(self.typist.undo)
         self.undoable.emit(self.typist.last is not None)
         self.reply.emit(self.t("undo_done") if ok else self.t("undo_failed", why=self.t(f"why_undo_{why}")))

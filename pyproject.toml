@@ -22,6 +22,8 @@ dependencies = [
     "uvicorn",
     "python-multipart",
     "openpyxl",
+    "python-docx",
+    "pywin32",
     "meta-sam-parser",
     "playwright",
     "PySide6-Essentials",

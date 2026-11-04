@@ -411,3 +411,37 @@ Esto es una prueba. Te mando un saludo.
 Saludos,". 196 tests pass.
 - Not done: sending (clicking Send) or repeating a demonstrated Gmail action; agent mode still
   repeats only spreadsheet-to-form tasks.
+
+## Stage A / priority 1 (Nov 3-4): recipes at levels 1-2, verified, with preview and undo
+- New spec from the user (recipes, a 5-level execution cascade, lessons, free mode) with a
+  priority order: stage A first, demo recipe Excel -> Word in < 3 s, demo-check 5/5.
+- `recipes/learn.py`: the demonstration comes from Windows' recent files (the .docx saved last,
+  the most similar older .docx as the template, the sheet); the row the user used and the key
+  column are found with no model (first try picked "Description": the key is now the leftmost
+  column unique in every row). Muse Spark writes `run(sheet, template, key, out_dir)` (level 1,
+  openpyxl + python-docx) or `run(..., word)` (level 2, Word COM). Verification on copies: the
+  user's row must give the user's document (paragraphs, cells, bold/italic, file name), two more
+  rows must show their own key and not the demo's, and no value of the demo row may be a literal.
+  Up to 2 corrections per level with the differences, then the next level.
+- `recipes/sandbox.py`: AST whitelist, then `python -I` with an audit hook installed after the
+  imports (no writes/renames/deletes outside the run folder, no reads outside the recipe's
+  folders and Python's, no subprocess/socket/ctypes/winreg), no API keys in its environment,
+  timeout, `stop_all()` for Ctrl+Alt+Q. The first live compile was refused for `str.replace`
+  (the AST banned `.replace` for Path renames): renames are left to the audit hook.
+- `recipes/run.py`: requests matched with no model (words of the request vs the key column;
+  keys inside another's dropped; equal ones -> "Which one?" — "Lazy Comet" is two clients);
+  the proof runs in parallel before each use; preview of the result vs the template; Enter
+  copies next to the user's document (backup if it exists), Undo removes/restores (refused if
+  changed since).
+- Panel: result preview with "Compilado por Muse Spark · Nivel N · Hecho en X s" in small gray,
+  Options -> Recipes (list + Delete), Ctrl+Alt+R learns, Ctrl+Alt+Q stops. Screenshots in both
+  themes (capturas-ui/receta-*.png, recetas-lista-*.png).
+- `scripts/demo_check.py`: 5/5 runs (learn at level 1 on the first attempt, $0.018-0.024; replay
+  0.50-0.62 s; apply; undo; ambiguous; two letters + Esc). The first 5-run attempt reported 1/5
+  because EDITH_HOME is read once at import, so all runs shared one recipe folder: each run now
+  gets its own `cfg.root`. Level 2 forced live: verified on attempt 2 (15 s of verification).
+- Tests: 13 new (whitelist, the audit hook refusing writes/reads/renames outside, emergency stop,
+  demo row/key, recent files, anti-literal, compile with a correction, apply/undo/backup, broken
+  proof stops the run): 209 pass.
+- Not yet: lessons (P2), escalation (P3), levels 3-5, automatic detection, free mode. The real
+  "learn this" from Windows' recent files was tested with a fixture list, not with Word open.

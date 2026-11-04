@@ -24,6 +24,8 @@ from .agent import Agent
 from .hotkey import DEFAULT_OPEN, GlobalHotkeys, from_key_event
 
 DEFAULT_PRESENTATION = "Ctrl+Alt+P"
+DEFAULT_LEARN = "Ctrl+Alt+R"
+DEFAULT_STOP = "Ctrl+Alt+Q"
 from .fonts import SMALL_PX, TEXT_PX, font
 from .theme import Theme, glow, glow_extent, inset, raised, shadow_extent
 
@@ -160,6 +162,7 @@ class Edith(QWidget):
         agent.reply.connect(self._show_reply)
         agent.footnote.connect(self._show_footnote)
         agent.preview.connect(self._show_preview)
+        agent.result_preview.connect(self._show_result_preview)
         agent.undoable.connect(self._show_undo)
         if hotkeys:
             hotkeys.pressed.connect(self._hotkey)
@@ -167,6 +170,8 @@ class Edith(QWidget):
             if not hotkeys.set("open", wanted) and wanted != DEFAULT_OPEN:
                 hotkeys.set("open", DEFAULT_OPEN)
             hotkeys.set("presentation", self.state.get("presentation_hotkey", DEFAULT_PRESENTATION))
+            hotkeys.set("learn", DEFAULT_LEARN)
+            hotkeys.set("stop", DEFAULT_STOP)
         self._label_hotkey()
         self._label_local()
         self._label_presentation()
@@ -205,7 +210,8 @@ class Edith(QWidget):
         self.answer = QLabel()
         self.answer.setFont(font(TEXT_PX))
         self.answer.setWordWrap(True)
-        self.answer.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.answer.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        self.answer.linkActivated.connect(self._recipe_link)   # Delete in the recipe list
         self.answer.setTextFormat(Qt.RichText)   # answers arrive as Markdown, shown as typeset HTML
         self.scroll = QScrollArea()
         self.scroll.setWidget(self.answer)
@@ -259,6 +265,7 @@ class Edith(QWidget):
                                               lambda: self.actions.open_activity(self))
         self.btn_memory = self._text_button("", self._toggle_memory)
         self.btn_quit = self._text_button("Salir" if es else "Quit", self.actions.quit)
+        self.btn_recipes = self._text_button(self.agent.t("recipes_label"), self._show_recipes)
         self.btn_hotkey = self._text_button("", self._start_capture)
         self.btn_default = self._text_button(self.agent.t("hotkey_default"), self._restore_default)
         self.btn_default.hide()   # only while a new shortcut is being captured
@@ -267,9 +274,9 @@ class Edith(QWidget):
         self.btn_delete = self._text_button(self.agent.t("delete_all"), self._delete_everything)
         self.btn_delete.setVisible(self.actions.delete_everything is not None)
         self._delete_armed = False
-        self.text_buttons = (self.btn_activity, self.btn_memory, self.btn_quit, self.btn_hotkey,
+        self.text_buttons = (self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_quit, self.btn_hotkey,
                              self.btn_default, self.btn_local, self.btn_presentation, self.btn_delete)
-        groups = ((self.btn_activity, self.btn_memory, self.btn_local, self.btn_presentation),
+        groups = ((self.btn_activity, self.btn_recipes, self.btn_memory, self.btn_local, self.btn_presentation),
                   ((self.btn_hotkey, self.btn_default),),
                   (self.btn_delete, self.btn_quit))
         for n, group in enumerate(groups):
@@ -425,6 +432,12 @@ class Edith(QWidget):
             self.toggle()
         elif name == "presentation":
             self.toggle_presentation()
+        elif name == "stop":
+            self.agent.stop()
+        elif name == "learn" and not self.agent.busy:
+            if not self.expanded:
+                self.expand(activate=False)
+            self.agent.submit("aprende esto" if self.lang == "es" else "learn this")
 
     def _capture_target(self) -> None:
         """Remember the text field in front before Edith takes the focus (for edits)."""
@@ -543,6 +556,54 @@ class Edith(QWidget):
         if not self.expanded:
             self.expand(activate=False)
         self._fit()
+
+    def _show_result_preview(self, p) -> None:
+        """A recipe's result to confirm: the document with what changed from the template in
+        the accent; under it, in small gray, who compiled it, the level and the time."""
+        import html as _html
+
+        from ..brain.edit import Proposal, preview_html
+
+        if p is None:
+            self.based.hide()
+            self.foot.setText(self._footnote)
+            self._fit()
+            return
+        pal = self.theme.palette
+        name = p.outputs[0].final.name
+        if len(p.outputs) > 1:
+            name = self.agent.t("recipe_more", name=name, n=len(p.outputs) - 1)
+        body = preview_html(p.old_text, Proposal("replace", p.new_text, "", None), pal.accent_text, pal.muted, pal.text)
+        self.answer.setText(f'<div style="line-height:125%;"><span style="font-weight:600;">{_html.escape(name)}</span>'
+                            f"<br>{body}</div>")
+        self.scroll.verticalScrollBar().setValue(0)
+        self.thumb.hide()
+        self.based_text.setText(self.agent.t("recipe_foot", level=p.recipe.level, s=f"{p.seconds:.1f}"))
+        self.based.show()
+        self.foot.setText(self.agent.t("edit_hint"))
+        if not self.expanded:
+            self.expand(activate=False)
+        self._fit()
+
+    def _show_recipes(self) -> None:
+        """The recipe memory, in the answer area: one line each, with Delete."""
+        import html as _html
+
+        recipes = self.agent.recipes.all()
+        if not recipes:
+            self.answer.setText(_reading_html(self.agent.t("recipes_none")))
+        else:
+            pal = self.theme.palette
+            lines = [f'{_html.escape(self.agent.t("recipe_line", name=r.name, level=r.level, uses=len(r.runs)))}'
+                     f' &nbsp; <a href="del:{r.id}" style="color:{pal.muted}; text-decoration:none;">'
+                     f'{self.agent.t("recipe_delete")}</a>' for r in recipes]
+            self.answer.setText('<div style="line-height:150%;">' + "<br>".join(lines) + "</div>")
+        self._fit()
+
+    def _recipe_link(self, link: str) -> None:
+        if link.startswith("del:"):
+            self.agent.recipes.delete(link[4:])
+            self._show_recipes()
 
     def _ago(self, ts: float | None) -> str:
         import time as _time

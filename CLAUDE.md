@@ -61,6 +61,36 @@ a clear message, report. Verify what exists instead of redoing it. No dead code.
   table, install/run, privacy). Final report must include the real cost of 10 test questions.
 - Phone / multi-machine features: they never existed in this repo (nothing to flag).
 
+## RECIPES (user's spec of Nov 3, 2026, 22:40 — takes precedence where it differs)
+"Show it once. Edith does the next ones." Every task is compiled to the LOWEST execution level
+that reproduces the same result; nothing runs on the user's visible screen. Cascade: 1 direct
+data (file libraries) > 2 app API (Office COM / app CLI) > 3 web API (official API with token in
+Windows Credential Manager; else headless Playwright with the user's session profile; never
+CAPTCHAs/2FA: ask the user) > 4 background UI Automation (Invoke/ValuePattern, no mouse/focus) on
+a separate virtual desktop > 5 SAM 3.1 vision, same desktop.
+Two memories in Edith's folder, editable/deletable from options: RECIPES (steps, params,
+official level, program, verification, manual time) and LESSONS (one-line preferences with the
+app/context; created when the user edits the preview, writes "corrige: ...", edits an applied
+result minutes later, or rejects a preview and does it differently; the local model summarizes
+"Aprendí: ..." in small gray, discardable; relevant lessons applied before every run).
+Learning: Ctrl+Alt+R / "Edith, aprende esto"; automatic detection of a sequence repeated 2+
+times -> "¿Guardo esto como receta?" in the panel; free mode induces recipes from successful runs.
+Compile: Muse Spark writes the program for level 1, else 2, ... 5; MANDATORY verification on
+copies vs the user's result; max 2 corrections per level; code whitelist; timeout 30 s (1-3) /
+3 min (4-5). Run: local model picks recipe + params + lessons (no API if only params change);
+logic change -> Muse Spark adapts and re-verifies; a step failing 2x -> Muse Spark replans,
+then next level, then stop with a one-line reason; always on copies; preview of the RESULT;
+Enter/Esc; backup for Undo; small gray "Compilado por Muse Spark · Nivel N · Hecho en X s"
+(overrides "no technical details in the panel" for this line); extra confirmation before
+sending email/messages, deleting, payments; Ctrl+Alt+Q stops everything. Free mode: Muse Spark
+plans, UIA + SAM 3.1 perception, 25 steps / 3 min. Stages A-E (git tags etapa-A...).
+PRIORITY ORDER (user, same night; read first): P1 = stage A + demo recipe Excel -> Word < 3 s +
+demo-check 5/5; P2 = simple lessons (preview edit or "corrige:"), detection (d) behind an OFF
+flag; P3 = escalation to Muse Spark after 2 failures; P4 only if all pass: levels 4-5 + automatic
+detection. Never start a priority before the previous passes; after each: demo-check, commit,
+report; revert what breaks demo-check; unfinished work stays behind an OFF flag and out of the UI.
+Status: stage A done (src/edith/recipes/, scripts/demo_check.py, demo/make_letters.py).
+
 ## Product (the video revolves around this; no command is typed in the video)
 A minimal desktop assistant with a local memory of the last 10 minutes.
 1. The user does ONE task by hand (e.g. 1 invoice from Excel into a web portal), recording nothing on purpose.

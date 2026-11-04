@@ -293,6 +293,43 @@ message. Before writing code, a sandbox probe now saves the demo row once (field
 the save button by name) and passes the page's accessibility tree after saving to Muse Spark;
 a failing step's repair also gets the page as it was at that moment.
 
+## Recipes: show it once, Edith does the next ones (Stage A)
+
+Do a task once by hand (e.g. a payment reminder in Word from one row of `invoices.xlsx`), save
+it, and tell Edith "learn this" (or press Ctrl+Alt+R). Edith finds the demonstration in Windows'
+recent files (the document you saved, the template it started from, the sheet), and Muse Spark
+compiles it into a program at the **lowest level of the cascade** that reproduces your result:
+
+| Level | How it runs | Status |
+|---|---|---|
+| 1. Direct data | file libraries (openpyxl, python-docx): no app opens | done |
+| 2. The app's API | Word through COM, invisible | done |
+| 3. Web API / headless browser | | stage C |
+| 4. Background UI Automation on a separate desktop | | stage C |
+| 5. Vision with SAM 3.1 | | stage C |
+
+- **Verified before it is kept:** the program runs on copies with your row and must give your
+  document (paragraphs, table cells, bold/italic, file name), then on two more rows (their values
+  must appear, yours must not); values of your row written into the program are refused. On a
+  difference Muse Spark gets it and corrects (at most 2 times per level), then the next level.
+- **Safe to run:** one `def run(...)` importing only document libraries (checked before running),
+  in a separate process whose audit hook refuses writing outside its own folder, reading
+  outside the recipe's folders, starting programs, native libraries and any network; 30 s
+  timeout; Ctrl+Alt+Q kills it at once.
+- **Replay with no model:** "do the same for Panadería Ñandú", "para Ñandú y Acuña", "for all of
+  them": the values are matched against the sheet with no API call; "Lazy Comet" (two clients)
+  gets "Which one?". The recipe's proof (your own row must still give your document) runs in
+  parallel before each use. The result is a preview with what changed in the accent and, in small
+  gray, "Compiled by Muse Spark · Level 1 · Done in 0.5 s"; Enter saves next to your document,
+  Esc discards, Undo removes it (refused if you edited it since).
+- Recipes live in `state/recipes/` with their program and proof; Options -> Recipes lists them
+  with Delete.
+
+Demo-check (`scripts/demo_check.py`, real Muse Spark, each run from nothing: learn -> variation
+-> apply -> undo -> ambiguous -> several + Esc): **5/5 runs**, every recipe at level 1 on the first
+attempt, $0.018-0.024 per compile, replay 0.50-0.62 s. Level 2 forced: verified on the 2nd
+attempt (Word COM, ~5 s per run).
+
 ## Demo environment
 
 A local **Invoice Portal** (FastAPI + SQLite) and an Excel file with 30 fictitious invoices
@@ -343,6 +380,7 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 
 | Built during the hackathon (all original code) | Status |
 |---|---|
+| Recipes (stage A): demo finding, compile with Muse Spark at levels 1-2, verification on copies, sandbox (AST whitelist + audit hook), replay with preview/undo, recipe list, Ctrl+Alt+R / Ctrl+Alt+Q, demo-check | done |
 | Local memory: change-detected capture, mouse-only click log, UIA field values, system audio, 10-min buffer, exclusions | done |
 | `ask` over the last 10 minutes, with token optimizations | done |
 | Learning backwards: demo episode finder, spreadsheet row matcher, Muse Spark block plan + check | done |
@@ -388,6 +426,8 @@ libraries/models, installed from PyPI / Hugging Face and not vendored.
 | [Uvicorn](https://github.com/encode/uvicorn) | Serving the demo portal locally | BSD-3-Clause |
 | [python-multipart](https://github.com/Kludex/python-multipart) | Parsing the portal's form posts | Apache-2.0 |
 | [openpyxl](https://foss.heptapod.net/openpyxl/openpyxl) | Generating/reading the demo invoices Excel | MIT |
+| [python-docx](https://github.com/python-openxml/python-docx) | Recipes, level 1: reading and writing Word documents | MIT |
+| [pywin32](https://github.com/mhammond/pywin32) | Recipes, level 2: Word through COM; resolving recent-file shortcuts | PSF-2.0 |
 | [Playwright](https://github.com/microsoft/playwright-python) (+ Chromium) | Driving the browser in fabricated tools | Apache-2.0 |
 | [meta-sam-parser](https://dev.meta.ai/) (Meta) | Building SAM 3.1 box/point prompts and decoding its masks | SAM License |
 | Muse Spark via the [Meta Model API](https://dev.meta.ai/docs) | Multimodal reasoning (remote API) | Meta terms |
